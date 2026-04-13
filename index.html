@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Lessons">
 <meta name="theme-color" content="#2D6A4F">
@@ -298,21 +298,19 @@ let state = {
 async function api(method, body) {
   if (!state.apiUrl) { showToast('⚠️ Set API URL in Settings'); return null; }
   try {
-    if (method === 'GET') {
-      const url = state.apiUrl + (body ? '?' + new URLSearchParams(body).toString() : '');
-      const r = await fetch(url);
-      return await r.json();
-    } else {
-      const r = await fetch(state.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' }, // Apps Script needs this for CORS
-        body: JSON.stringify(body),
-      });
-      return await r.json();
-    }
+    // Google Apps Script CORS workaround:
+    // ALL requests go through POST with text/plain to avoid CORS preflight.
+    // GET requests are converted to POST with an action parameter.
+    const r = await fetch(state.apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    return await r.json();
   } catch (e) {
     console.error('API error:', e);
-    showToast('⚠️ Connection error');
+    showToast('⚠️ Connection error — check console');
     return null;
   }
 }
@@ -320,7 +318,7 @@ async function api(method, body) {
 async function loadAll() {
   state.loading = true;
   render();
-  const data = await api('GET', { action: 'getAll' });
+  const data = await api('POST', { action: 'getAll' });
   if (data && !data.error) {
     state.parents = data.parents || [];
     state.students = data.students || [];
@@ -880,7 +878,7 @@ function renderBulkImport() {
     placeholder: 'García López - María, Pedro\nMartínez Ruiz - Ana'
   }));
 
-  content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '14px' }, onclick: async () => {
+  content.appendChild(h('button', { className: 'btn-primary', id: 'import-btn', style: { marginTop: '14px' }, onclick: async () => {
     const text = document.getElementById('bulk-text').value;
     const existing = new Set(state.parents.map(p => p.name.toLowerCase().trim()));
     const parents = text.split('\n').map(l => l.trim()).filter(l => l)
@@ -893,12 +891,32 @@ function renderBulkImport() {
 
     if (parents.length === 0) { showToast('No new parents to import'); return; }
 
-    const r = await api('POST', { action: 'bulkImportParents', parents });
-    if (r?.success) {
-      showToast('✓ Imported ' + r.count + ' parents');
-      await loadAll();
-      navigate('parents');
+    // Send in chunks of 50 to avoid Google Apps Script timeout
+    const CHUNK = 50;
+    const btn = document.getElementById('import-btn');
+    let imported = 0;
+    let failed = false;
+
+    for (let i = 0; i < parents.length; i += CHUNK) {
+      const chunk = parents.slice(i, i + CHUNK);
+      btn.textContent = 'Importing... ' + Math.min(i + CHUNK, parents.length) + '/' + parents.length;
+      btn.disabled = true;
+
+      const r = await api('POST', { action: 'bulkImportParents', parents: chunk });
+      if (r?.success) {
+        imported += r.count;
+      } else {
+        failed = true;
+        showToast('⚠️ Error at batch ' + (Math.floor(i/CHUNK)+1) + ' — ' + (r?.error || 'unknown'));
+        break;
+      }
     }
+
+    if (imported > 0) {
+      showToast('✓ Imported ' + imported + ' parents');
+      await loadAll();
+    }
+    navigate('parents');
   }}, 'Import'));
 
   wrap.appendChild(content);
