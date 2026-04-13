@@ -883,7 +883,7 @@ function renderBulkImport() {
     const existing = new Set(state.parents.map(p => p.name.toLowerCase().trim()));
     const parents = text.split('\n').map(l => l.trim()).filter(l => l)
       .map(line => {
-        const m = line.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+        const m = line.match(/^(.+?)\s+[-–—]\s+(.+)$/);
         if (m) return { name: m[1].trim(), students: m[2].split(',').map(s => ({ name: s.trim() })).filter(s => s.name) };
         return { name: line, students: [] };
       })
