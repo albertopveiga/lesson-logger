@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Lessons">
+<meta name="theme-color" content="#2D6A4F">
+<title>Lesson Logger</title>
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F7F6F3;
+  --card: #FFFFFF;
+  --text: #1A1A1A;
+  --muted: #8B8B8B;
+  --border: #E8E6E1;
+  --accent: #2D6A4F;
+  --accent-lt: #E9F5EE;
+  --accent-dk: #1B4332;
+  --warm: #F0EDE8;
+  --danger: #C1453B;
+  --danger-lt: #FFF0EF;
+  --warning: #E8A84C;
+  --warning-lt: #FFF8ED;
+  --radius: 14px;
+  --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: 80px;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: var(--font); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+input, textarea, select { font-family: var(--font); }
+
+/* ─── Header ─── */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  background: var(--card); position: sticky; top: 0; z-index: 10;
+}
+.header h1 { font-size: 17px; font-weight: 700; }
+.back-btn { background: none; border: none; font-size: 15px; color: var(--accent); font-weight: 600; padding: 4px 0; }
+.add-btn { background: var(--accent-lt); border: none; font-size: 13px; color: var(--accent); padding: 6px 14px; border-radius: 20px; font-weight: 600; }
+
+/* ─── Home ─── */
+.home-header {
+  padding: 24px 24px 14px; background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.home-header h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; }
+.home-header p { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+/* ─── Summary ─── */
+.summary {
+  margin: 14px 20px 0; background: var(--accent-lt); border-radius: var(--radius);
+  padding: 14px 18px; border: 1px solid rgba(45,106,79,0.12);
+}
+.summary-title { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.summary-grid { display: flex; justify-content: space-between; }
+.summary-item { text-align: center; }
+.summary-val { font-size: 20px; font-weight: 800; color: var(--accent); }
+.summary-lbl { font-size: 11px; color: var(--accent); opacity: 0.75; margin-top: 1px; }
+
+/* ─── Content ─── */
+.content { padding: 12px 20px; }
+
+/* ─── Student / Parent buttons ─── */
+.item-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 7px;
+  text-align: left; transition: border-color 0.15s;
+}
+.item-btn:active { border-color: var(--accent); }
+.item-name { font-size: 15px; font-weight: 600; display: block; }
+.item-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.item-arrow { font-size: 14px; color: var(--muted); }
+.item-meta { display: flex; align-items: center; gap: 8px; }
+
+/* ─── Lesson type grid ─── */
+.type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.type-btn {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 14px 8px; background: var(--card); border: 2px solid var(--border);
+  border-radius: var(--radius); text-align: center; transition: all 0.15s;
+}
+.type-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.type-btn .label { font-size: 14px; font-weight: 700; }
+.type-btn .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.type-btn.active .sub { color: rgba(255,255,255,0.7); }
+.type-btn .price { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 5px; }
+.type-btn.active .price { color: #fff; }
+
+/* ─── Duration grid ─── */
+.dur-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dur-btn {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 6px; background: var(--card); border: 2px solid var(--border);
+  border-radius: 12px; transition: all 0.15s;
+}
+.dur-btn.active { background: var(--accent); border-color: var(--accent); }
+.dur-btn .val { font-size: 20px; font-weight: 800; color: var(--accent); }
+.dur-btn.active .val { color: #fff; }
+.dur-btn .unit { font-size: 10px; color: var(--muted); }
+.dur-btn.active .unit { color: rgba(255,255,255,0.7); }
+
+/* ─── Price section ─── */
+.price-box { margin-top: 18px; background: var(--warm); border-radius: var(--radius); padding: 14px; }
+.price-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.price-lbl { font-size: 13px; font-weight: 600; }
+.price-input-wrap { display: flex; align-items: center; gap: 4px; }
+.price-currency { font-size: 15px; font-weight: 700; color: var(--accent); }
+.price-input {
+  width: 65px; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border);
+  font-size: 15px; text-align: right; outline: none; background: var(--card);
+}
+.reset-price { background: none; border: none; color: var(--accent); font-size: 11px; text-decoration: underline; padding: 0; margin-bottom: 6px; }
+.total-row { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px; }
+.total-lbl { font-size: 15px; font-weight: 700; }
+.total-val { font-size: 20px; font-weight: 800; color: var(--accent); }
+
+/* ─── Forms ─── */
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 5px; }
+.form-input {
+  width: 100%; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border);
+  font-size: 15px; background: var(--card); outline: none;
+}
+.form-input:focus { border-color: var(--accent); }
+textarea.form-input { resize: vertical; line-height: 1.5; }
+
+/* ─── Section label ─── */
+.section-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; margin-top: 0; }
+.section-divider { border-top: 2px solid var(--border); padding-top: 14px; margin-top: 8px; margin-bottom: 10px; }
+
+/* ─── Buttons ─── */
+.btn-primary {
+  width: 100%; padding: 14px; border-radius: var(--radius); border: none;
+  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700;
+}
+.btn-primary:disabled { opacity: 0.4; }
+.btn-secondary {
+  width: 100%; padding: 12px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text); font-size: 13px; font-weight: 600;
+}
+.btn-delete {
+  width: 100%; padding: 12px; border-radius: var(--radius); border: none;
+  background: none; color: var(--danger); font-size: 13px; font-weight: 600; margin-top: 12px;
+}
+.btn-import {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: var(--warm); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 13px 16px; margin-bottom: 10px; font-size: 14px; font-weight: 600;
+}
+
+/* ─── Add student inline ─── */
+.add-student-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.add-student-row input { flex: 1; }
+.add-student-btn {
+  padding: 11px 16px; border-radius: 12px; border: none;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap;
+}
+
+/* ─── Override rows ─── */
+.override-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.override-label { font-size: 13px; font-weight: 600; }
+.override-input {
+  width: 60px; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border);
+  font-size: 14px; text-align: right; outline: none; background: var(--card);
+}
+
+/* ─── History ─── */
+.month-block { margin-bottom: 24px; }
+.month-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 2px solid var(--text); }
+.month-label { font-size: 16px; font-weight: 800; }
+.month-total { font-size: 15px; font-weight: 700; color: var(--accent); }
+.hist-parent { background: var(--card); border-radius: 12px; border: 1px solid var(--border); padding: 11px 13px; margin-top: 8px; }
+.hist-parent-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.hist-parent-name { font-size: 14px; font-weight: 700; }
+.hist-parent-total { font-size: 13px; font-weight: 700; color: var(--accent); }
+.lesson-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); }
+.lesson-info { flex: 1; }
+.lesson-student { font-size: 13px; font-weight: 600; display: block; }
+.lesson-meta { font-size: 10px; color: var(--muted); }
+.lesson-total { font-size: 13px; font-weight: 700; color: var(--accent); min-width: 50px; text-align: right; }
+.lesson-del { background: none; border: none; color: var(--danger); font-size: 16px; padding: 2px 4px; }
+
+/* ─── Export ─── */
+.export-block { background: var(--warm); border-radius: 12px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--border); overflow: auto; max-height: 380px; }
+.export-pre { font-size: 11px; line-height: 1.5; margin: 0; white-space: pre-wrap; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+/* ─── Info / Warning ─── */
+.info-box { background: var(--accent-lt); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid rgba(45,106,79,0.12); }
+.info-text { font-size: 13px; line-height: 1.4; color: var(--accent); }
+.warning-box { background: var(--warning-lt); border: 1px solid rgba(232,168,76,0.25); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; font-size: 12px; color: #8B6914; }
+
+/* ─── Preview ─── */
+.preview-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; margin-top: 10px; }
+.preview-header { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.preview-row { display: flex; justify-content: space-between; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; }
+
+/* ─── Empty state ─── */
+.empty { text-align: center; padding: 40px 20px; }
+.empty-icon { font-size: 44px; margin-bottom: 10px; }
+.empty-text { font-size: 15px; color: var(--muted); margin-bottom: 18px; }
+
+/* ─── Bottom nav ─── */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 480px; display: flex; justify-content: space-around;
+  background: var(--card); border-top: 1px solid var(--border);
+  padding: 7px 0 env(safe-area-inset-bottom, 7px); z-index: 20;
+}
+.nav-btn { display: flex; flex-direction: column; align-items: center; gap: 1px; background: none; border: none; padding: 5px 14px; }
+.nav-icon { font-size: 18px; }
+.nav-label { font-size: 10px; font-weight: 600; color: var(--muted); }
+
+/* ─── Toast ─── */
+.toast {
+  position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #fff; padding: 10px 22px; border-radius: 26px;
+  font-size: 14px; font-weight: 600; z-index: 100; box-shadow: 0 4px 18px rgba(0,0,0,0.14);
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+/* ─── Settings ─── */
+.settings-btn {
+  position: absolute; right: 20px; top: 26px; background: none; border: none;
+  font-size: 20px; color: var(--muted); padding: 4px;
+}
+
+/* ─── Loading ─── */
+.loading { display: flex; align-items: center; justify-content: center; min-height: 60vh; color: var(--muted); font-size: 15px; }
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Search */
+.search-input {
+  width: 100%; padding: 10px 13px; border-radius: 12px; border: 1px solid var(--border);
+  font-size: 14px; background: var(--card); outline: none; margin-bottom: 10px;
+}
+.search-input:focus { border-color: var(--accent); }
+
+.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+const LESSON_TYPES = [
+  { id: 'ind_pres', label: 'Individual', sub: 'Presencial', short: 'Ind · Pres' },
+  { id: 'ind_online', label: 'Individual', sub: 'Online', short: 'Ind · Online' },
+  { id: 'grp_pres', label: 'Group', sub: 'Presencial', short: 'Group · Pres' },
+  { id: 'grp_online', label: 'Group', sub: 'Online', short: 'Group · Online' },
+];
+
+const DEFAULT_PRICES = { ind_pres: 30, ind_online: 25, grp_pres: 20, grp_online: 15 };
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+let state = {
+  view: 'home',
+  apiUrl: localStorage.getItem('ll_api_url') || '',
+  parents: [],
+  students: [],
+  lessons: [],
+  config: { ...DEFAULT_PRICES },
+  loading: false,
+  toast: null,
+  // Selection
+  selStudent: null,
+  selParent: null,
+  searchQuery: '',
+};
+
+// ─── API ─────────────────────────────────────────────────────────────────────
+
+async function api(method, body) {
+  if (!state.apiUrl) { showToast('⚠️ Set API URL in Settings'); return null; }
+  try {
+    if (method === 'GET') {
+      const url = state.apiUrl + (body ? '?' + new URLSearchParams(body).toString() : '');
+      const r = await fetch(url);
+      return await r.json();
+    } else {
+      const r = await fetch(state.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' }, // Apps Script needs this for CORS
+        body: JSON.stringify(body),
+      });
+      return await r.json();
+    }
+  } catch (e) {
+    console.error('API error:', e);
+    showToast('⚠️ Connection error');
+    return null;
+  }
+}
+
+async function loadAll() {
+  state.loading = true;
+  render();
+  const data = await api('GET', { action: 'getAll' });
+  if (data && !data.error) {
+    state.parents = data.parents || [];
+    state.students = data.students || [];
+    state.lessons = data.lessons || [];
+    if (data.config) {
+      state.config = {
+        ind_pres: Number(data.config.price_ind_pres) || DEFAULT_PRICES.ind_pres,
+        ind_online: Number(data.config.price_ind_online) || DEFAULT_PRICES.ind_online,
+        grp_pres: Number(data.config.price_grp_pres) || DEFAULT_PRICES.grp_pres,
+        grp_online: Number(data.config.price_grp_online) || DEFAULT_PRICES.grp_online,
+      };
+    }
+  } else if (data?.error) {
+    showToast('⚠️ ' + data.error);
+  }
+  state.loading = false;
+  render();
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getPrice(student, typeId) {
+  if (student?.priceOverrides?.[typeId] != null) return student.priceOverrides[typeId];
+  return state.config[typeId] ?? DEFAULT_PRICES[typeId];
+}
+
+function getParentName(parentId) {
+  const p = state.parents.find(p => p.id === parentId);
+  return p ? p.name : '?';
+}
+
+function getStudentName(studentId) {
+  const s = state.students.find(s => s.id === studentId);
+  return s ? s.name : '?';
+}
+
+function getLessonType(id) { return LESSON_TYPES.find(t => t.id === id) || LESSON_TYPES[0]; }
+function getCurrentMonth() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; }
+function getMonthLabel(ds) { return new Date(ds + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
+function formatDate(ds) { return new Date(ds).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }); }
+
+function showToast(msg) {
+  state.toast = msg;
+  render();
+  setTimeout(() => { state.toast = null; render(); }, 2500);
+}
+
+function navigate(view, extra = {}) {
+  state.view = view;
+  state.searchQuery = '';
+  Object.assign(state, extra);
+  render();
+  window.scrollTo(0, 0);
+}
+
+// ─── Render engine ───────────────────────────────────────────────────────────
+
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'onclick' || k === 'onchange' || k === 'oninput') el[k] = v;
+    else if (k === 'className') el.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else if (k === 'innerHTML') el.innerHTML = v;
+    else el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null) continue;
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return el;
+}
+
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const views = {
+    home: renderHome,
+    log: renderLog,
+    parents: renderParents,
+    addParent: renderAddParent,
+    editParent: renderEditParent,
+    editStudent: renderEditStudent,
+    pricing: renderPricing,
+    bulkImport: renderBulkImport,
+    history: renderHistory,
+    export: renderExport,
+    settings: renderSettings,
+  };
+
+  const fn = views[state.view] || renderHome;
+  app.appendChild(fn());
+
+  if (state.view === 'home') app.appendChild(renderBottomNav());
+  if (state.toast) app.appendChild(h('div', { className: 'toast' }, state.toast));
+}
+
+// ─── Views ───────────────────────────────────────────────────────────────────
+
+function renderHeader(title, onBack, rightEl) {
+  return h('div', { className: 'header' },
+    onBack ? h('button', { className: 'back-btn', onclick: onBack }, '← Back') : h('div', { style: { width: '60px' } }),
+    h('h1', {}, title),
+    rightEl || h('div', { style: { width: '60px' } })
+  );
+}
+
+function renderHome() {
+  const wrap = h('div');
+
+  // Home header with settings
+  const hdr = h('div', { className: 'home-header', style: { position: 'relative' } },
+    h('h1', {}, 'Lesson Logger'),
+    h('p', {}, 'Tap a student to log a lesson'),
+    h('button', { className: 'settings-btn', onclick: () => navigate('settings') }, '⚙️')
+  );
+  wrap.appendChild(hdr);
+
+  if (!state.apiUrl) {
+    wrap.appendChild(h('div', { className: 'content' },
+      h('div', { className: 'empty' },
+        h('div', { className: 'empty-icon' }, '🔗'),
+        h('p', { className: 'empty-text' }, 'Connect to your Google Sheet first'),
+        h('button', { className: 'btn-primary', onclick: () => navigate('settings') }, 'Open Settings')
+      )
+    ));
+    return wrap;
+  }
+
+  if (state.loading) {
+    wrap.appendChild(h('div', { className: 'loading' }, h('div', { className: 'spinner' }), 'Loading...'));
+    return wrap;
+  }
+
+  // Summary
+  const cm = getCurrentMonth();
+  const ml = state.lessons.filter(l => String(l.date).startsWith(cm));
+  if (ml.length > 0) {
+    const totalH = ml.reduce((s,l) => s + l.duration, 0);
+    const totalR = ml.reduce((s,l) => s + l.total, 0);
+    const uniq = new Set(ml.map(l => l.studentId)).size;
+    wrap.appendChild(h('div', { className: 'summary' },
+      h('div', { className: 'summary-title' }, 'This month'),
+      h('div', { className: 'summary-grid' },
+        h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, totalH + 'h'), h('div', { className: 'summary-lbl' }, 'lessons')),
+        h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, String(uniq)), h('div', { className: 'summary-lbl' }, 'students')),
+        h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, '€' + totalR.toFixed(0)), h('div', { className: 'summary-lbl' }, 'total'))
+      )
+    ));
+  }
+
+  const content = h('div', { className: 'content' });
+
+  // All students flat list
+  const allStudents = state.students.map(st => ({
+    ...st, parentName: getParentName(st.parentId)
+  })).sort((a,b) => a.name.localeCompare(b.name));
+
+  if (allStudents.length === 0) {
+    content.appendChild(h('div', { className: 'empty' },
+      h('div', { className: 'empty-icon' }, '👩‍🏫'),
+      h('p', { className: 'empty-text' }, 'No students yet — add them via Parents'),
+      h('button', { className: 'btn-primary', onclick: () => navigate('parents') }, 'Set up Parents & Students')
+    ));
+  } else {
+    // Search
+    content.appendChild(h('input', {
+      className: 'search-input', type: 'text', placeholder: 'Search students...',
+      value: state.searchQuery,
+      oninput: (e) => { state.searchQuery = e.target.value; render(); }
+    }));
+
+    const q = state.searchQuery.toLowerCase();
+    const filtered = q ? allStudents.filter(s => s.name.toLowerCase().includes(q) || s.parentName.toLowerCase().includes(q)) : allStudents;
+
+    filtered.forEach(st => {
+      content.appendChild(h('button', {
+        className: 'item-btn',
+        onclick: () => navigate('log', { selStudent: st })
+      },
+        h('div', {},
+          h('span', { className: 'item-name' }, st.name),
+          h('span', { className: 'item-sub' }, st.parentName)
+        ),
+        h('span', { className: 'item-arrow' }, '→')
+      ));
+    });
+  }
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderLog() {
+  const st = state.selStudent;
+  if (!st) return renderHome();
+  const wrap = h('div');
+  wrap.appendChild(renderHeader(st.name, () => navigate('home')));
+
+  const content = h('div', { className: 'content' });
+
+  // Date
+  const today = new Date().toISOString().slice(0, 10);
+  content.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'Lesson date'),
+    h('input', { className: 'form-input', type: 'date', id: 'log-date', value: today })
+  ));
+
+  // Type
+  content.appendChild(h('p', { className: 'section-label' }, 'Lesson type'));
+  const tg = h('div', { className: 'type-grid' });
+  LESSON_TYPES.forEach(t => {
+    const btn = h('button', {
+      className: 'type-btn', id: 'type-' + t.id,
+      onclick: () => {
+        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state._selType = t.id;
+        state._customPrice = null;
+        updateLogUI();
+      }
+    },
+      h('span', { className: 'label' }, t.label),
+      h('span', { className: 'sub' }, t.sub),
+      h('span', { className: 'price' }, '€' + getPrice(st, t.id) + '/h')
+    );
+    tg.appendChild(btn);
+  });
+  content.appendChild(tg);
+
+  // Duration (hidden until type selected)
+  const durSection = h('div', { id: 'dur-section', className: 'hidden' });
+  durSection.appendChild(h('p', { className: 'section-label', style: { marginTop: '18px' } }, 'Duration'));
+  const dg = h('div', { className: 'dur-grid' });
+  [0.5, 1, 1.5, 2, 2.5, 3].forEach(d => {
+    const btn = h('button', {
+      className: 'dur-btn', id: 'dur-' + d,
+      onclick: () => {
+        document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state._selDur = d;
+        updateLogUI();
+      }
+    },
+      h('span', { className: 'val' }, String(d)),
+      h('span', { className: 'unit' }, d === 1 ? 'hour' : 'hours')
+    );
+    dg.appendChild(btn);
+  });
+  durSection.appendChild(dg);
+  content.appendChild(durSection);
+
+  // Price + confirm (hidden until duration selected)
+  const priceSection = h('div', { id: 'price-section', className: 'hidden' });
+  content.appendChild(priceSection);
+
+  wrap.appendChild(content);
+
+  // Init
+  state._selType = null;
+  state._selDur = null;
+  state._customPrice = null;
+
+  return wrap;
+}
+
+function updateLogUI() {
+  const durSec = document.getElementById('dur-section');
+  const priceSec = document.getElementById('price-section');
+  if (!durSec || !priceSec) return;
+
+  if (state._selType) durSec.classList.remove('hidden');
+  else { durSec.classList.add('hidden'); priceSec.classList.add('hidden'); return; }
+
+  if (!state._selDur) { priceSec.classList.add('hidden'); return; }
+  priceSec.classList.remove('hidden');
+
+  const st = state.selStudent;
+  const stdPrice = getPrice(st, state._selType);
+  const displayPrice = state._customPrice != null ? state._customPrice : stdPrice;
+  const total = state._selDur * displayPrice;
+
+  priceSec.innerHTML = '';
+  const box = h('div', { className: 'price-box' },
+    h('div', { className: 'price-row' },
+      h('span', { className: 'price-lbl' }, 'Price per hour'),
+      h('div', { className: 'price-input-wrap' },
+        h('span', { className: 'price-currency' }, '€'),
+        h('input', {
+          className: 'price-input', type: 'number', value: String(displayPrice),
+          oninput: (e) => { state._customPrice = e.target.value === '' ? null : parseFloat(e.target.value); updateLogUI(); }
+        })
+      )
+    ),
+    state._customPrice != null && state._customPrice !== stdPrice
+      ? h('button', { className: 'reset-price', onclick: () => { state._customPrice = null; updateLogUI(); } }, 'Reset to standard (€' + stdPrice + ')')
+      : null,
+    h('div', { className: 'total-row' },
+      h('span', { className: 'total-lbl' }, 'Total'),
+      h('span', { className: 'total-val' }, '€' + total.toFixed(2))
+    ),
+    h('button', {
+      className: 'btn-primary', style: { marginTop: '14px' },
+      onclick: async () => {
+        const date = document.getElementById('log-date').value;
+        const lesson = {
+          action: 'addLesson',
+          studentId: st.id,
+          parentId: st.parentId,
+          date: date,
+          lessonType: state._selType,
+          duration: state._selDur,
+          pricePerHour: displayPrice,
+          total: total,
+        };
+        const r = await api('POST', lesson);
+        if (r?.success) {
+          state.lessons.push({
+            id: r.id, studentId: st.id, parentId: st.parentId,
+            date, lessonType: state._selType, duration: state._selDur,
+            pricePerHour: displayPrice, total
+          });
+          showToast('✓ ' + state._selDur + 'h for ' + st.name);
+          navigate('home');
+        }
+      }
+    }, 'Log lesson')
+  );
+  priceSec.appendChild(box);
+}
+
+function renderParents() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Parents & Students', () => navigate('home'),
+    h('button', { className: 'add-btn', onclick: () => navigate('addParent') }, '+ Add')));
+
+  const content = h('div', { className: 'content' });
+
+  content.appendChild(h('button', { className: 'btn-import', onclick: () => navigate('bulkImport') },
+    h('span', {}, '📋'), h('span', {}, 'Paste list from Mollie')));
+  content.appendChild(h('button', { className: 'btn-import', onclick: () => navigate('pricing') },
+    h('span', {}, '💰'), h('span', {}, 'Standard pricing')));
+
+  if (state.parents.length === 0) {
+    content.appendChild(h('div', { className: 'empty', style: { paddingTop: '20px' } },
+      h('p', { className: 'empty-text' }, 'No parents yet')));
+  } else {
+    // Search
+    content.appendChild(h('input', {
+      className: 'search-input', type: 'text', placeholder: 'Search parents...',
+      value: state.searchQuery,
+      oninput: (e) => { state.searchQuery = e.target.value; render(); }
+    }));
+
+    const q = state.searchQuery.toLowerCase();
+    const filtered = q ? state.parents.filter(p => p.name.toLowerCase().includes(q)) : state.parents;
+
+    filtered.sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+      const studentCount = state.students.filter(s => s.parentId === p.id).length;
+      content.appendChild(h('button', {
+        className: 'item-btn',
+        onclick: () => navigate('editParent', { selParent: p })
+      },
+        h('div', {},
+          h('span', { className: 'item-name' }, p.name),
+          h('span', { className: 'item-sub' }, studentCount + ' student' + (studentCount !== 1 ? 's' : ''))
+        ),
+        h('span', { className: 'item-arrow' }, '→')
+      ));
+    });
+  }
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderAddParent() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Add Parent', () => navigate('parents')));
+  const content = h('div', { className: 'content' },
+    h('div', { className: 'form-group' },
+      h('label', { className: 'form-label' }, 'Parent name (as in Mollie)'),
+      h('input', { className: 'form-input', type: 'text', id: 'parent-name', placeholder: 'e.g. García López' })
+    ),
+    h('button', { className: 'btn-primary', style: { marginTop: '16px' }, onclick: async () => {
+      const name = document.getElementById('parent-name').value.trim();
+      if (!name) return;
+      const r = await api('POST', { action: 'addParent', name });
+      if (r?.success) {
+        state.parents.push({ id: r.id, name });
+        showToast('✓ Added ' + name);
+        navigate('parents');
+      }
+    }}, 'Add Parent')
+  );
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderEditParent() {
+  const parent = state.selParent;
+  if (!parent) return renderParents();
+  const students = state.students.filter(s => s.parentId === parent.id);
+  const wrap = h('div');
+  wrap.appendChild(renderHeader(parent.name, () => navigate('parents')));
+
+  const content = h('div', { className: 'content' });
+
+  // Students
+  content.appendChild(h('div', { className: 'section-divider' },
+    h('span', { className: 'section-label' }, 'Students')));
+
+  students.forEach(st => {
+    content.appendChild(h('button', {
+      className: 'item-btn',
+      onclick: () => navigate('editStudent', { selStudent: st, selParent: parent })
+    },
+      h('span', { className: 'item-name' }, st.name),
+      h('span', { className: 'item-arrow' }, '→')
+    ));
+  });
+
+  // Add student
+  content.appendChild(h('div', { className: 'add-student-row' },
+    h('input', { className: 'form-input', type: 'text', id: 'new-student', placeholder: 'New student name' }),
+    h('button', { className: 'add-student-btn', onclick: async () => {
+      const name = document.getElementById('new-student').value.trim();
+      if (!name) return;
+      const r = await api('POST', { action: 'addStudent', parentId: parent.id, name, priceOverrides: {} });
+      if (r?.success) {
+        state.students.push({ id: r.id, parentId: parent.id, name, priceOverrides: {} });
+        showToast('✓ Added ' + name);
+        render();
+      }
+    }}, 'Add')
+  ));
+
+  // Delete parent
+  content.appendChild(h('button', { className: 'btn-delete', onclick: async () => {
+    if (!confirm('Delete ' + parent.name + ' and all students?')) return;
+    const r = await api('POST', { action: 'deleteParent', id: parent.id });
+    if (r?.success) {
+      state.parents = state.parents.filter(p => p.id !== parent.id);
+      state.students = state.students.filter(s => s.parentId !== parent.id);
+      navigate('parents');
+    }
+  }}, 'Delete parent'));
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderEditStudent() {
+  const student = state.selStudent;
+  const parent = state.selParent;
+  if (!student || !parent) return renderParents();
+
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Edit Student', () => navigate('editParent', { selParent: parent })));
+
+  const content = h('div', { className: 'content' });
+  content.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'Student name'),
+    h('input', { className: 'form-input', type: 'text', id: 'edit-st-name', value: student.name })
+  ));
+
+  content.appendChild(h('p', { className: 'section-label', style: { marginTop: '14px' } }, 'Price overrides (blank = standard)'));
+  LESSON_TYPES.forEach(t => {
+    const hasOverride = student.priceOverrides?.[t.id] != null;
+    content.appendChild(h('div', { className: 'override-row' },
+      h('span', { className: 'override-label' }, t.short),
+      h('div', { className: 'price-input-wrap' },
+        h('span', { className: 'price-currency' }, '€'),
+        h('input', {
+          className: 'override-input', type: 'number', id: 'ov-' + t.id,
+          value: hasOverride ? String(student.priceOverrides[t.id]) : '',
+          placeholder: String(state.config[t.id])
+        })
+      )
+    ));
+  });
+
+  content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '18px' }, onclick: async () => {
+    const name = document.getElementById('edit-st-name').value.trim();
+    if (!name) return;
+    const ov = {};
+    LESSON_TYPES.forEach(t => {
+      const v = document.getElementById('ov-' + t.id).value;
+      if (v !== '') ov[t.id] = parseFloat(v);
+    });
+    const r = await api('POST', { action: 'updateStudent', id: student.id, name, priceOverrides: ov });
+    if (r?.success) {
+      const idx = state.students.findIndex(s => s.id === student.id);
+      if (idx >= 0) state.students[idx] = { ...student, name, priceOverrides: ov };
+      showToast('✓ Saved');
+      navigate('editParent', { selParent: parent });
+    }
+  }}, 'Save'));
+
+  content.appendChild(h('button', { className: 'btn-delete', onclick: async () => {
+    if (!confirm('Remove ' + student.name + '?')) return;
+    const r = await api('POST', { action: 'deleteStudent', id: student.id });
+    if (r?.success) {
+      state.students = state.students.filter(s => s.id !== student.id);
+      navigate('editParent', { selParent: parent });
+    }
+  }}, 'Remove student'));
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderPricing() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Standard Pricing', () => navigate('parents')));
+  const content = h('div', { className: 'content' });
+  content.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text' }, 'Default prices per hour. Students can have individual overrides.')));
+
+  LESSON_TYPES.forEach(t => {
+    content.appendChild(h('div', { className: 'override-row' },
+      h('span', { className: 'override-label' }, t.short),
+      h('div', { className: 'price-input-wrap' },
+        h('span', { className: 'price-currency' }, '€'),
+        h('input', { className: 'override-input', type: 'number', id: 'cfg-' + t.id, value: String(state.config[t.id] || 0) })
+      )
+    ));
+  });
+
+  content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '18px' }, onclick: async () => {
+    const cfg = {};
+    LESSON_TYPES.forEach(t => {
+      cfg['price_' + t.id] = parseFloat(document.getElementById('cfg-' + t.id).value) || 0;
+      state.config[t.id] = cfg['price_' + t.id];
+    });
+    await api('POST', { action: 'updateConfig', config: cfg });
+    showToast('✓ Prices saved');
+    navigate('parents');
+  }}, 'Save Prices'));
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderBulkImport() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Bulk Import', () => navigate('parents')));
+  const content = h('div', { className: 'content' });
+
+  content.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text', innerHTML: 'Paste parent names, one per line. Optionally add students with a dash:<br><br><code style="font-size:12px">García López - María, Pedro<br>Martínez Ruiz - Ana<br>Fernández Díaz</code>' })
+  ));
+
+  content.appendChild(h('textarea', {
+    className: 'form-input', id: 'bulk-text', rows: '8',
+    placeholder: 'García López - María, Pedro\nMartínez Ruiz - Ana'
+  }));
+
+  content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '14px' }, onclick: async () => {
+    const text = document.getElementById('bulk-text').value;
+    const existing = new Set(state.parents.map(p => p.name.toLowerCase().trim()));
+    const parents = text.split('\n').map(l => l.trim()).filter(l => l)
+      .map(line => {
+        const m = line.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+        if (m) return { name: m[1].trim(), students: m[2].split(',').map(s => ({ name: s.trim() })).filter(s => s.name) };
+        return { name: line, students: [] };
+      })
+      .filter(p => !existing.has(p.name.toLowerCase()));
+
+    if (parents.length === 0) { showToast('No new parents to import'); return; }
+
+    const r = await api('POST', { action: 'bulkImportParents', parents });
+    if (r?.success) {
+      showToast('✓ Imported ' + r.count + ' parents');
+      await loadAll();
+      navigate('parents');
+    }
+  }}, 'Import'));
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderHistory() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('History', () => navigate('home')));
+
+  if (state.lessons.length === 0) {
+    wrap.appendChild(h('div', { className: 'empty' }, h('div', { className: 'empty-icon' }, '📋'), h('p', { className: 'empty-text' }, 'No lessons logged yet')));
+    return wrap;
+  }
+
+  const content = h('div', { className: 'content' });
+  const grouped = {};
+  state.lessons.forEach(l => {
+    const m = String(l.date).slice(0, 7);
+    if (!grouped[m]) grouped[m] = [];
+    grouped[m].push(l);
+  });
+
+  const cm = getCurrentMonth();
+  Object.entries(grouped).sort((a,b) => b[0].localeCompare(a[0])).forEach(([month, lessons]) => {
+    const byParent = {};
+    lessons.forEach(l => {
+      const pid = l.parentId || 'x';
+      if (!byParent[pid]) byParent[pid] = { name: getParentName(pid), lessons: [] };
+      byParent[pid].lessons.push(l);
+    });
+    const mTotal = lessons.reduce((s,l) => s + l.total, 0);
+
+    const block = h('div', { className: 'month-block' },
+      h('div', { className: 'month-header' },
+        h('span', { className: 'month-label' }, getMonthLabel(month)),
+        h('span', { className: 'month-total' }, '€' + mTotal.toFixed(2))
+      )
+    );
+
+    Object.entries(byParent).forEach(([pid, pData]) => {
+      const pTotal = pData.lessons.reduce((s,l) => s + l.total, 0);
+      const pBlock = h('div', { className: 'hist-parent' },
+        h('div', { className: 'hist-parent-header' },
+          h('span', { className: 'hist-parent-name' }, pData.name),
+          h('span', { className: 'hist-parent-total' }, '€' + pTotal.toFixed(2))
+        )
+      );
+      pData.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date))).forEach(l => {
+        const row = h('div', { className: 'lesson-row' },
+          h('div', { className: 'lesson-info' },
+            h('span', { className: 'lesson-student' }, getStudentName(l.studentId) + '  ·  ' + formatDate(l.date)),
+            h('span', { className: 'lesson-meta' }, getLessonType(l.lessonType).short + ' · ' + l.duration + 'h × €' + l.pricePerHour)
+          ),
+          h('span', { className: 'lesson-total' }, '€' + l.total.toFixed(2))
+        );
+        if (month >= cm) {
+          row.appendChild(h('button', { className: 'lesson-del', onclick: async () => {
+            if (!confirm('Delete?')) return;
+            const r = await api('POST', { action: 'deleteLesson', id: l.id });
+            if (r?.success) { state.lessons = state.lessons.filter(x => x.id !== l.id); render(); }
+          }}, '×'));
+        }
+        pBlock.appendChild(row);
+      });
+      block.appendChild(pBlock);
+    });
+    content.appendChild(block);
+  });
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderExport() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Export for Invoicing', () => navigate('home')));
+  const cm = getCurrentMonth();
+  const ml = state.lessons.filter(l => String(l.date).startsWith(cm));
+
+  if (ml.length === 0) {
+    wrap.appendChild(h('div', { className: 'empty' }, h('div', { className: 'empty-icon' }, '📊'), h('p', { className: 'empty-text' }, 'No lessons this month')));
+    return wrap;
+  }
+
+  const byParent = {};
+  ml.forEach(l => {
+    const pid = l.parentId || 'x';
+    if (!byParent[pid]) byParent[pid] = { name: getParentName(pid), lessons: [] };
+    byParent[pid].lessons.push(l);
+  });
+
+  let text = 'INVOICE DATA — ' + getMonthLabel(cm) + '\n' + '═'.repeat(55) + '\n\n';
+  Object.values(byParent).forEach(p => {
+    const pT = p.lessons.reduce((s,l) => s + l.total, 0);
+    text += '▸ ' + p.name + '\n';
+    p.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date))).forEach(l => {
+      text += '  ' + l.date + '  ' + getStudentName(l.studentId) + '  ' + getLessonType(l.lessonType).short + '  ' + l.duration + 'h × €' + l.pricePerHour + ' = €' + l.total.toFixed(2) + '\n';
+    });
+    text += '  INVOICE TOTAL: €' + pT.toFixed(2) + '\n\n';
+  });
+  text += '═'.repeat(55) + '\nGRAND TOTAL: €' + ml.reduce((s,l) => s + l.total, 0).toFixed(2) + '\n';
+
+  const content = h('div', { className: 'content' },
+    h('p', { style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' } }, 'Invoice data grouped by parent — copy for Mollie'),
+    h('div', { className: 'export-block' }, h('pre', { className: 'export-pre' }, text)),
+    h('button', { className: 'btn-primary', onclick: async () => {
+      try { await navigator.clipboard.writeText(text); showToast('✓ Copied!'); }
+      catch { showToast('⚠️ Copy failed'); }
+    }}, 'Copy invoice data')
+  );
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderSettings() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Settings', () => navigate('home')));
+  const content = h('div', { className: 'content' });
+
+  content.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text', innerHTML: 'Paste the Google Apps Script Web App URL.<br>Find it in your Google Sheet → Extensions → Apps Script → Deploy.' })
+  ));
+
+  content.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'API URL'),
+    h('input', { className: 'form-input', type: 'url', id: 'api-url', value: state.apiUrl, placeholder: 'https://script.google.com/macros/s/...' })
+  ));
+
+  content.appendChild(h('button', { className: 'btn-primary', onclick: async () => {
+    const url = document.getElementById('api-url').value.trim();
+    state.apiUrl = url;
+    localStorage.setItem('ll_api_url', url);
+    if (url) {
+      showToast('Connecting...');
+      await loadAll();
+      if (state.parents.length > 0 || state.students.length > 0) {
+        showToast('✓ Connected! ' + state.parents.length + ' parents loaded');
+      }
+    }
+    navigate('home');
+  }}, 'Connect'));
+
+  if (state.apiUrl) {
+    content.appendChild(h('button', { className: 'btn-secondary', style: { marginTop: '10px' }, onclick: async () => {
+      showToast('Refreshing...');
+      await loadAll();
+      showToast('✓ Data refreshed');
+    }}, 'Refresh data'));
+  }
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+function renderBottomNav() {
+  return h('div', { className: 'bottom-nav' },
+    h('button', { className: 'nav-btn', onclick: () => navigate('parents') },
+      h('span', { className: 'nav-icon' }, '👥'), h('span', { className: 'nav-label' }, 'Parents')),
+    h('button', { className: 'nav-btn', onclick: () => navigate('history') },
+      h('span', { className: 'nav-icon' }, '📋'), h('span', { className: 'nav-label' }, 'History')),
+    h('button', { className: 'nav-btn', onclick: () => navigate('export') },
+      h('span', { className: 'nav-icon' }, '📊'), h('span', { className: 'nav-label' }, 'Export'))
+  );
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+render();
+if (state.apiUrl) loadAll();
+</script>
+</body>
+</html>

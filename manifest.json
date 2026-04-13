@@ -1,0 +1,16 @@
+{
+  "name": "Lesson Logger",
+  "short_name": "Lessons",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F7F6F3",
+  "theme_color": "#2D6A4F",
+  "description": "Log tutoring lessons quickly",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📗</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
