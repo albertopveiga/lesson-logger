@@ -1218,14 +1218,12 @@ function renderExport() {
   });
   text += '═'.repeat(55) + '\nGRAND TOTAL: €' + ml.reduce((s,l) => s + l.total, 0).toFixed(2) + '\n';
 
-  const content = h('div', { className: 'content' },
-    h('p', { style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' } }, 'Invoice data grouped by parent — copy for Mollie'),
-    h('div', { className: 'export-block' }, h('pre', { className: 'export-pre' }, text)),
-    h('button', { className: 'btn-primary', onclick: async () => {
-      try { await navigator.clipboard.writeText(text); showToast('✓ Copied!'); }
-      catch { showToast('⚠️ Copy failed'); }
-    }}, 'Copy invoice data')
-  );
+  content.appendChild(h('p', { style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' } }, 'Invoice data grouped by parent — copy for Mollie'));
+  content.appendChild(h('div', { className: 'export-block' }, h('pre', { className: 'export-pre' }, text)));
+  content.appendChild(h('button', { className: 'btn-primary', onclick: async () => {
+    try { await navigator.clipboard.writeText(text); showToast('✓ Copied!'); }
+    catch { showToast('⚠️ Copy failed'); }
+  }}, 'Copy invoice data'));
 
   wrap.appendChild(content);
   return wrap;
