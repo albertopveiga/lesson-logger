@@ -521,12 +521,20 @@ function renderLog() {
 
   const content = h('div', { className: 'content' });
 
-  // Date
+  // Date and Time
   const today = new Date().toISOString().slice(0, 10);
-  content.appendChild(h('div', { className: 'form-group' },
-    h('label', { className: 'form-label' }, 'Lesson date'),
-    h('input', { className: 'form-input', type: 'date', id: 'log-date', value: today })
-  ));
+  const nowTime = new Date().toTimeString().slice(0, 5);
+  const dateTimeRow = h('div', { style: { display: 'flex', gap: '10px' } },
+    h('div', { className: 'form-group', style: { flex: '1' } },
+      h('label', { className: 'form-label' }, 'Date'),
+      h('input', { className: 'form-input', type: 'date', id: 'log-date', value: today })
+    ),
+    h('div', { className: 'form-group', style: { flex: '1' } },
+      h('label', { className: 'form-label' }, 'Time'),
+      h('input', { className: 'form-input', type: 'time', id: 'log-time', value: nowTime })
+    )
+  );
+  content.appendChild(dateTimeRow);
 
   // Type
   content.appendChild(h('p', { className: 'section-label' }, 'Lesson type'));
@@ -625,11 +633,13 @@ function updateLogUI() {
       className: 'btn-primary', style: { marginTop: '14px' },
       onclick: async () => {
         const date = document.getElementById('log-date').value;
+        const time = document.getElementById('log-time').value || '';
         const lesson = {
           action: 'addLesson',
           studentId: st.id,
           parentId: st.parentId,
           date: date,
+          time: time,
           lessonType: state._selType,
           duration: state._selDur,
           pricePerHour: displayPrice,
@@ -639,7 +649,7 @@ function updateLogUI() {
         if (r?.success) {
           state.lessons.push({
             id: r.id, studentId: st.id, parentId: st.parentId,
-            date, lessonType: state._selType, duration: state._selDur,
+            date, time, lessonType: state._selType, duration: state._selDur,
             pricePerHour: displayPrice, total
           });
           showToast('✓ ' + state._selDur + 'h for ' + st.name);
@@ -965,10 +975,11 @@ function renderHistory() {
           h('span', { className: 'hist-parent-total' }, '€' + pTotal.toFixed(2))
         )
       );
-      pData.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date))).forEach(l => {
+      pData.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.time||'').localeCompare(String(b.time||''))).forEach(l => {
+        const timeStr = l.time ? ' ' + l.time : '';
         const row = h('div', { className: 'lesson-row' },
           h('div', { className: 'lesson-info' },
-            h('span', { className: 'lesson-student' }, getStudentName(l.studentId) + '  ·  ' + formatDate(l.date)),
+            h('span', { className: 'lesson-student' }, getStudentName(l.studentId) + '  ·  ' + formatDate(l.date) + timeStr),
             h('span', { className: 'lesson-meta' }, getLessonType(l.lessonType).short + ' · ' + l.duration + 'h × €' + l.pricePerHour)
           ),
           h('span', { className: 'lesson-total' }, '€' + l.total.toFixed(2))
@@ -1013,8 +1024,9 @@ function renderExport() {
   Object.values(byParent).forEach(p => {
     const pT = p.lessons.reduce((s,l) => s + l.total, 0);
     text += '▸ ' + p.name + '\n';
-    p.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date))).forEach(l => {
-      text += '  ' + l.date + '  ' + getStudentName(l.studentId) + '  ' + getLessonType(l.lessonType).short + '  ' + l.duration + 'h × €' + l.pricePerHour + ' = €' + l.total.toFixed(2) + '\n';
+    p.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.time||'').localeCompare(String(b.time||''))).forEach(l => {
+      const timeStr = l.time ? ' ' + l.time : '';
+      text += '  ' + l.date + timeStr + '  ' + getStudentName(l.studentId) + '  ' + getLessonType(l.lessonType).short + '  ' + l.duration + 'h × €' + l.pricePerHour + ' = €' + l.total.toFixed(2) + '\n';
     });
     text += '  INVOICE TOTAL: €' + pT.toFixed(2) + '\n\n';
   });
