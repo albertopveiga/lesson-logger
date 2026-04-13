@@ -459,8 +459,8 @@ function renderHome() {
   const cm = getCurrentMonth();
   const ml = state.lessons.filter(l => String(l.date).startsWith(cm));
   if (ml.length > 0) {
-    const totalH = ml.reduce((s,l) => s + l.duration, 0);
-    const totalR = ml.reduce((s,l) => s + l.total, 0);
+    const totalH = ml.reduce((s,l) => s + Number(l.duration), 0);
+    const totalR = ml.reduce((s,l) => s + Number(l.total), 0);
     const uniq = new Set(ml.map(l => l.studentId)).size;
     wrap.appendChild(h('div', { className: 'summary' },
       h('div', { className: 'summary-title' }, 'This month'),
@@ -730,7 +730,7 @@ function renderEditLesson() {
   const dg = h('div', { className: 'dur-grid' });
   [0.5, 1, 1.5, 2, 2.5, 3].forEach(d => {
     const btn = h('button', {
-      className: 'dur-btn' + (l.duration === d ? ' active' : ''),
+      className: 'dur-btn' + (Number(l.duration) === d ? ' active' : ''),
       id: 'edur-' + d,
       onclick: () => {
         document.querySelectorAll('#edit-durs .dur-btn').forEach(b => b.classList.remove('active'));
@@ -1132,7 +1132,7 @@ function renderHistory() {
       if (!byParent[pid]) byParent[pid] = { name: getParentName(pid), lessons: [] };
       byParent[pid].lessons.push(l);
     });
-    const mTotal = lessons.reduce((s,l) => s + l.total, 0);
+    const mTotal = lessons.reduce((s,l) => s + Number(l.total), 0);
 
     const block = h('div', { className: 'month-block' },
       h('div', { className: 'month-header' },
@@ -1142,7 +1142,7 @@ function renderHistory() {
     );
 
     Object.entries(byParent).forEach(([pid, pData]) => {
-      const pTotal = pData.lessons.reduce((s,l) => s + l.total, 0);
+      const pTotal = pData.lessons.reduce((s,l) => s + Number(l.total), 0);
       const pBlock = h('div', { className: 'hist-parent' },
         h('div', { className: 'hist-parent-header' },
           h('span', { className: 'hist-parent-name' }, pData.name),
@@ -1158,7 +1158,7 @@ function renderHistory() {
             h('span', { className: 'lesson-student' }, getStudentName(l.studentId) + '  ·  ' + formatDate(l.date) + timeStr),
             h('span', { className: 'lesson-meta' }, getLessonType(l.lessonType).short + ' · ' + l.duration + 'h × €' + l.pricePerHour)
           ),
-          h('span', { className: 'lesson-total' }, '€' + l.total.toFixed(2))
+          h('span', { className: 'lesson-total' }, '€' + Number(l.total).toFixed(2))
         );
         if (month >= cm) {
           row.appendChild(h('button', { className: 'lesson-del', onclick: async (e) => {
@@ -1224,15 +1224,15 @@ function renderExport() {
 
   let text = 'INVOICE DATA — ' + getMonthLabel(selectedMonth) + '\n' + '═'.repeat(55) + '\n\n';
   Object.values(byParent).forEach(p => {
-    const pT = p.lessons.reduce((s,l) => s + l.total, 0);
+    const pT = p.lessons.reduce((s,l) => s + Number(l.total), 0);
     text += '▸ ' + p.name + '\n';
     p.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.time||'').localeCompare(String(b.time||''))).forEach(l => {
       const timeStr = l.time ? ' ' + l.time : '';
-      text += '  ' + l.date + timeStr + '  ' + getStudentName(l.studentId) + '  ' + getLessonType(l.lessonType).short + '  ' + l.duration + 'h × €' + l.pricePerHour + ' = €' + l.total.toFixed(2) + '\n';
+      text += '  ' + l.date + timeStr + '  ' + getStudentName(l.studentId) + '  ' + getLessonType(l.lessonType).short + '  ' + l.duration + 'h × €' + l.pricePerHour + ' = €' + Number(l.total).toFixed(2) + '\n';
     });
     text += '  INVOICE TOTAL: €' + pT.toFixed(2) + '\n\n';
   });
-  text += '═'.repeat(55) + '\nGRAND TOTAL: €' + ml.reduce((s,l) => s + l.total, 0).toFixed(2) + '\n';
+  text += '═'.repeat(55) + '\nGRAND TOTAL: €' + ml.reduce((s,l) => s + Number(l.total), 0).toFixed(2) + '\n';
 
   content.appendChild(h('p', { style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' } }, 'Invoice data grouped by parent — copy for Mollie'));
   content.appendChild(h('div', { className: 'export-block' }, h('pre', { className: 'export-pre' }, text)));
