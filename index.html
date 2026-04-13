@@ -399,6 +399,7 @@ function render() {
   const views = {
     home: renderHome,
     log: renderLog,
+    editLesson: renderEditLesson,
     parents: renderParents,
     addParent: renderAddParent,
     editParent: renderEditParent,
@@ -659,6 +660,120 @@ function updateLogUI() {
     }, 'Log lesson')
   );
   priceSec.appendChild(box);
+}
+
+function renderEditLesson() {
+  const l = state._editLesson;
+  if (!l) return renderHistory();
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Edit Lesson', () => navigate('history')));
+
+  const studentName = getStudentName(l.studentId);
+  const parentName = getParentName(l.parentId);
+
+  const content = h('div', { className: 'content' });
+
+  content.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text' }, studentName + ' (' + parentName + ')')
+  ));
+
+  // Date and Time
+  const dateTimeRow = h('div', { style: { display: 'flex', gap: '10px' } },
+    h('div', { className: 'form-group', style: { flex: '1' } },
+      h('label', { className: 'form-label' }, 'Date'),
+      h('input', { className: 'form-input', type: 'date', id: 'edit-date', value: String(l.date).slice(0, 10) })
+    ),
+    h('div', { className: 'form-group', style: { flex: '1' } },
+      h('label', { className: 'form-label' }, 'Time'),
+      h('input', { className: 'form-input', type: 'time', id: 'edit-time', value: l.time || '' })
+    )
+  );
+  content.appendChild(dateTimeRow);
+
+  // Lesson type
+  content.appendChild(h('p', { className: 'section-label' }, 'Lesson type'));
+  const tg = h('div', { className: 'type-grid' });
+  LESSON_TYPES.forEach(t => {
+    const btn = h('button', {
+      className: 'type-btn' + (l.lessonType === t.id ? ' active' : ''),
+      id: 'etype-' + t.id,
+      onclick: () => {
+        document.querySelectorAll('#edit-types .type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    },
+      h('span', { className: 'label' }, t.label),
+      h('span', { className: 'sub' }, t.sub)
+    );
+    tg.appendChild(btn);
+  });
+  tg.id = 'edit-types';
+  content.appendChild(tg);
+
+  // Duration
+  content.appendChild(h('p', { className: 'section-label', style: { marginTop: '18px' } }, 'Duration'));
+  const dg = h('div', { className: 'dur-grid' });
+  [0.5, 1, 1.5, 2, 2.5, 3].forEach(d => {
+    const btn = h('button', {
+      className: 'dur-btn' + (l.duration === d ? ' active' : ''),
+      id: 'edur-' + d,
+      onclick: () => {
+        document.querySelectorAll('#edit-durs .dur-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    },
+      h('span', { className: 'val' }, String(d)),
+      h('span', { className: 'unit' }, d === 1 ? 'hour' : 'hours')
+    );
+    dg.appendChild(btn);
+  });
+  dg.id = 'edit-durs';
+  content.appendChild(dg);
+
+  // Price
+  content.appendChild(h('div', { className: 'form-group', style: { marginTop: '18px' } },
+    h('label', { className: 'form-label' }, 'Price per hour (€)'),
+    h('input', { className: 'form-input', type: 'number', id: 'edit-price', value: String(l.pricePerHour), min: '0', step: '0.5' })
+  ));
+
+  // Save
+  content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '16px' }, onclick: async () => {
+    const date = document.getElementById('edit-date').value;
+    const time = document.getElementById('edit-time').value || '';
+    const activeType = document.querySelector('#edit-types .type-btn.active');
+    const lessonType = activeType ? activeType.id.replace('etype-', '') : l.lessonType;
+    const activeDur = document.querySelector('#edit-durs .dur-btn.active');
+    const duration = activeDur ? parseFloat(activeDur.id.replace('edur-', '')) : l.duration;
+    const pricePerHour = parseFloat(document.getElementById('edit-price').value) || l.pricePerHour;
+    const total = duration * pricePerHour;
+
+    const r = await api('POST', {
+      action: 'updateLesson', id: l.id,
+      date, time, lessonType, duration, pricePerHour, total
+    });
+    if (r?.success) {
+      const idx = state.lessons.findIndex(x => x.id === l.id);
+      if (idx >= 0) {
+        state.lessons[idx] = { ...state.lessons[idx], date, time, lessonType, duration, pricePerHour, total };
+      }
+      showToast('✓ Lesson updated');
+      navigate('history');
+    }
+  }}, 'Save changes'));
+
+  // Delete
+  content.appendChild(h('button', { className: 'btn-delete', onclick: async () => {
+    if (!confirm('Delete this lesson?')) return;
+    const r = await api('POST', { action: 'deleteLesson', id: l.id });
+    if (r?.success) {
+      state.lessons = state.lessons.filter(x => x.id !== l.id);
+      showToast('✓ Deleted');
+      navigate('history');
+    }
+  }}, 'Delete lesson'));
+
+  wrap.appendChild(content);
+  return wrap;
 }
 
 function renderParents() {
@@ -977,15 +1092,18 @@ function renderHistory() {
       );
       pData.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.time||'').localeCompare(String(b.time||''))).forEach(l => {
         const timeStr = l.time ? ' ' + l.time : '';
-        const row = h('div', { className: 'lesson-row' },
-          h('div', { className: 'lesson-info' },
+        const row = h('div', { className: 'lesson-row', style: { cursor: month >= cm ? 'pointer' : 'default' } },
+          h('div', { className: 'lesson-info', onclick: () => {
+            if (month >= cm) navigate('editLesson', { _editLesson: l });
+          }},
             h('span', { className: 'lesson-student' }, getStudentName(l.studentId) + '  ·  ' + formatDate(l.date) + timeStr),
             h('span', { className: 'lesson-meta' }, getLessonType(l.lessonType).short + ' · ' + l.duration + 'h × €' + l.pricePerHour)
           ),
           h('span', { className: 'lesson-total' }, '€' + l.total.toFixed(2))
         );
         if (month >= cm) {
-          row.appendChild(h('button', { className: 'lesson-del', onclick: async () => {
+          row.appendChild(h('button', { className: 'lesson-del', onclick: async (e) => {
+            e.stopPropagation();
             if (!confirm('Delete?')) return;
             const r = await api('POST', { action: 'deleteLesson', id: l.id });
             if (r?.success) { state.lessons = state.lessons.filter(x => x.id !== l.id); render(); }
