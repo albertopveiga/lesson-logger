@@ -648,21 +648,25 @@ function updateLogUI() {
       onclick: async () => {
         const date = document.getElementById('log-date').value;
         const time = document.getElementById('log-time').value || '';
+        const selType = state._selType;
+        const selDur = state._selDur;
+        const price = displayPrice;
+        const lessonTotal = selDur * price;
         const tempId = 'tmp_' + Math.random().toString(36).slice(2, 8);
         const lessonData = {
           id: tempId, studentId: st.id, parentId: st.parentId,
-          date, time, lessonType: state._selType, duration: state._selDur,
-          pricePerHour: displayPrice, total
+          date, time, lessonType: selType, duration: selDur,
+          pricePerHour: price, total: lessonTotal
         };
         // Optimistic: show immediately
         state.lessons.push(lessonData);
-        showToast('✓ ' + state._selDur + 'h for ' + st.name);
+        showToast('✓ ' + selDur + 'h for ' + st.name);
         navigate('home');
-        // Save in background
+        // Save in background with captured values
         const r = await api('POST', {
           action: 'addLesson', studentId: st.id, parentId: st.parentId,
-          date, time, lessonType: state._selType, duration: state._selDur,
-          pricePerHour: displayPrice, total
+          date, time, lessonType: selType, duration: selDur,
+          pricePerHour: price, total: lessonTotal
         });
         if (r?.success) {
           const idx = state.lessons.findIndex(l => l.id === tempId);
