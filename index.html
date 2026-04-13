@@ -690,6 +690,7 @@ function renderEditLesson() {
 
   const studentName = getStudentName(l.studentId);
   const parentName = getParentName(l.parentId);
+  const student = state.students.find(s => s.id === l.studentId);
 
   const content = h('div', { className: 'content' });
 
@@ -710,6 +711,11 @@ function renderEditLesson() {
   );
   content.appendChild(dateTimeRow);
 
+  // Track current selections for recalculation
+  state._editType = l.lessonType;
+  state._editDur = Number(l.duration);
+  state._editPrice = Number(l.pricePerHour);
+
   // Lesson type
   content.appendChild(h('p', { className: 'section-label' }, 'Lesson type'));
   const tg = h('div', { className: 'type-grid' });
@@ -720,6 +726,12 @@ function renderEditLesson() {
       onclick: () => {
         document.querySelectorAll('#edit-types .type-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        state._editType = t.id;
+        // Update price to match new type's standard price
+        const newPrice = getPrice(student, t.id);
+        state._editPrice = newPrice;
+        document.getElementById('edit-price').value = newPrice;
+        updateEditTotal();
       }
     },
       h('span', { className: 'label' }, t.label),
@@ -740,6 +752,8 @@ function renderEditLesson() {
       onclick: () => {
         document.querySelectorAll('#edit-durs .dur-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        state._editDur = d;
+        updateEditTotal();
       }
     },
       h('span', { className: 'val' }, String(d)),
@@ -753,18 +767,30 @@ function renderEditLesson() {
   // Price
   content.appendChild(h('div', { className: 'form-group', style: { marginTop: '18px' } },
     h('label', { className: 'form-label' }, 'Price per hour (€)'),
-    h('input', { className: 'form-input', type: 'number', id: 'edit-price', value: String(l.pricePerHour), min: '0', step: '0.5' })
+    h('input', { className: 'form-input', type: 'number', id: 'edit-price', value: String(l.pricePerHour), min: '0', step: '0.5',
+      oninput: (e) => {
+        state._editPrice = parseFloat(e.target.value) || 0;
+        updateEditTotal();
+      }
+    })
   ));
+
+  // Total display
+  const totalBox = h('div', { className: 'price-box', id: 'edit-total-box' },
+    h('div', { className: 'total-row' },
+      h('span', { className: 'total-lbl' }, 'Total'),
+      h('span', { className: 'total-val', id: 'edit-total-val' }, '€' + (Number(l.duration) * Number(l.pricePerHour)).toFixed(2))
+    )
+  );
+  content.appendChild(totalBox);
 
   // Save
   content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '16px' }, onclick: async () => {
     const date = document.getElementById('edit-date').value;
     const time = document.getElementById('edit-time').value || '';
-    const activeType = document.querySelector('#edit-types .type-btn.active');
-    const lessonType = activeType ? activeType.id.replace('etype-', '') : l.lessonType;
-    const activeDur = document.querySelector('#edit-durs .dur-btn.active');
-    const duration = activeDur ? parseFloat(activeDur.id.replace('edur-', '')) : l.duration;
-    const pricePerHour = parseFloat(document.getElementById('edit-price').value) || l.pricePerHour;
+    const lessonType = state._editType;
+    const duration = state._editDur;
+    const pricePerHour = state._editPrice;
     const total = duration * pricePerHour;
 
     const r = await api('POST', {
@@ -794,6 +820,14 @@ function renderEditLesson() {
 
   wrap.appendChild(content);
   return wrap;
+}
+
+function updateEditTotal() {
+  const el = document.getElementById('edit-total-val');
+  if (el) {
+    const total = state._editDur * state._editPrice;
+    el.textContent = '€' + total.toFixed(2);
+  }
 }
 
 function renderParents() {
