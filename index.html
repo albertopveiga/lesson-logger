@@ -647,26 +647,29 @@ function updateLogUI() {
       onclick: async () => {
         const date = document.getElementById('log-date').value;
         const time = document.getElementById('log-time').value || '';
-        const lesson = {
-          action: 'addLesson',
-          studentId: st.id,
-          parentId: st.parentId,
-          date: date,
-          time: time,
-          lessonType: state._selType,
-          duration: state._selDur,
-          pricePerHour: displayPrice,
-          total: total,
+        const tempId = 'tmp_' + Math.random().toString(36).slice(2, 8);
+        const lessonData = {
+          id: tempId, studentId: st.id, parentId: st.parentId,
+          date, time, lessonType: state._selType, duration: state._selDur,
+          pricePerHour: displayPrice, total
         };
-        const r = await api('POST', lesson);
+        // Optimistic: show immediately
+        state.lessons.push(lessonData);
+        showToast('✓ ' + state._selDur + 'h for ' + st.name);
+        navigate('home');
+        // Save in background
+        const r = await api('POST', {
+          action: 'addLesson', studentId: st.id, parentId: st.parentId,
+          date, time, lessonType: state._selType, duration: state._selDur,
+          pricePerHour: displayPrice, total
+        });
         if (r?.success) {
-          state.lessons.push({
-            id: r.id, studentId: st.id, parentId: st.parentId,
-            date, time, lessonType: state._selType, duration: state._selDur,
-            pricePerHour: displayPrice, total
-          });
-          showToast('✓ ' + state._selDur + 'h for ' + st.name);
-          navigate('home');
+          const idx = state.lessons.findIndex(l => l.id === tempId);
+          if (idx >= 0) state.lessons[idx].id = r.id;
+        } else {
+          state.lessons = state.lessons.filter(l => l.id !== tempId);
+          showToast('⚠️ Failed to save lesson');
+          render();
         }
       }
     }, 'Log lesson')
@@ -893,12 +896,25 @@ function renderEditParent() {
   content.appendChild(h('div', { className: 'add-student-row' },
     h('input', { className: 'form-input', type: 'text', id: 'new-student', placeholder: 'New student name' }),
     h('button', { className: 'add-student-btn', onclick: async () => {
-      const name = document.getElementById('new-student').value.trim();
+      const input = document.getElementById('new-student');
+      const name = input.value.trim();
       if (!name) return;
+      // Optimistic: show immediately with temp ID
+      const tempId = 'tmp_' + Math.random().toString(36).slice(2, 8);
+      state.students.push({ id: tempId, parentId: parent.id, name, priceOverrides: {} });
+      input.value = '';
+      showToast('✓ Added ' + name);
+      render();
+      // Save in background
       const r = await api('POST', { action: 'addStudent', parentId: parent.id, name, priceOverrides: {} });
       if (r?.success) {
-        state.students.push({ id: r.id, parentId: parent.id, name, priceOverrides: {} });
-        showToast('✓ Added ' + name);
+        // Replace temp ID with real ID
+        const idx = state.students.findIndex(s => s.id === tempId);
+        if (idx >= 0) state.students[idx].id = r.id;
+      } else {
+        // Rollback
+        state.students = state.students.filter(s => s.id !== tempId);
+        showToast('⚠️ Failed to save ' + name);
         render();
       }
     }}, 'Add')
