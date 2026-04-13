@@ -1080,8 +1080,29 @@ function renderHistory() {
   }
 
   const content = h('div', { className: 'content' });
+
+  // Collect available months
+  const allMonths = [...new Set(state.lessons.map(l => String(l.date).slice(0, 7)))].sort((a,b) => b.localeCompare(a));
+  const selectedMonth = state._histMonth || 'all';
+
+  // Month filter
+  const select = h('select', {
+    className: 'form-input', style: { marginBottom: '14px' },
+    onchange: (e) => { state._histMonth = e.target.value; render(); }
+  },
+    h('option', { value: 'all' }, 'All months'),
+    ...allMonths.map(m => {
+      const opt = h('option', { value: m }, getMonthLabel(m));
+      if (m === selectedMonth) opt.selected = true;
+      return opt;
+    })
+  );
+  content.appendChild(select);
+
+  const filteredLessons = selectedMonth === 'all' ? state.lessons : state.lessons.filter(l => String(l.date).startsWith(selectedMonth));
+
   const grouped = {};
-  state.lessons.forEach(l => {
+  filteredLessons.forEach(l => {
     const m = String(l.date).slice(0, 7);
     if (!grouped[m]) grouped[m] = [];
     grouped[m].push(l);
@@ -1145,11 +1166,36 @@ function renderHistory() {
 function renderExport() {
   const wrap = h('div');
   wrap.appendChild(renderHeader('Export for Invoicing', () => navigate('home')));
+
+  if (state.lessons.length === 0) {
+    wrap.appendChild(h('div', { className: 'empty' }, h('div', { className: 'empty-icon' }, '📊'), h('p', { className: 'empty-text' }, 'No lessons to export')));
+    return wrap;
+  }
+
+  const content = h('div', { className: 'content' });
+
+  // Month picker
+  const allMonths = [...new Set(state.lessons.map(l => String(l.date).slice(0, 7)))].sort((a,b) => b.localeCompare(a));
   const cm = getCurrentMonth();
-  const ml = state.lessons.filter(l => String(l.date).startsWith(cm));
+  const selectedMonth = state._exportMonth || cm;
+
+  const select = h('select', {
+    className: 'form-input', style: { marginBottom: '14px' },
+    onchange: (e) => { state._exportMonth = e.target.value; render(); }
+  },
+    ...allMonths.map(m => {
+      const opt = h('option', { value: m }, getMonthLabel(m));
+      if (m === selectedMonth) opt.selected = true;
+      return opt;
+    })
+  );
+  content.appendChild(select);
+
+  const ml = state.lessons.filter(l => String(l.date).startsWith(selectedMonth));
 
   if (ml.length === 0) {
-    wrap.appendChild(h('div', { className: 'empty' }, h('div', { className: 'empty-icon' }, '📊'), h('p', { className: 'empty-text' }, 'No lessons this month')));
+    content.appendChild(h('div', { className: 'empty', style: { paddingTop: '20px' } }, h('p', { className: 'empty-text' }, 'No lessons in this month')));
+    wrap.appendChild(content);
     return wrap;
   }
 
@@ -1160,7 +1206,7 @@ function renderExport() {
     byParent[pid].lessons.push(l);
   });
 
-  let text = 'INVOICE DATA — ' + getMonthLabel(cm) + '\n' + '═'.repeat(55) + '\n\n';
+  let text = 'INVOICE DATA — ' + getMonthLabel(selectedMonth) + '\n' + '═'.repeat(55) + '\n\n';
   Object.values(byParent).forEach(p => {
     const pT = p.lessons.reduce((s,l) => s + l.total, 0);
     text += '▸ ' + p.name + '\n';
