@@ -490,15 +490,27 @@ function renderHome() {
     content.appendChild(h('input', {
       className: 'search-input', type: 'text', placeholder: 'Search students...',
       value: state.searchQuery,
-      oninput: (e) => { state.searchQuery = e.target.value; render(); }
+      id: 'home-search',
+      oninput: (e) => {
+        state.searchQuery = e.target.value;
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll('.student-item').forEach(el => {
+          const match = !q || el.dataset.search.includes(q);
+          el.style.display = match ? '' : 'none';
+        });
+      }
     }));
 
     const q = state.searchQuery.toLowerCase();
-    const filtered = q ? allStudents.filter(s => s.name.toLowerCase().includes(q) || s.parentName.toLowerCase().includes(q)) : allStudents;
+    const filtered = allStudents;
 
     filtered.forEach(st => {
+      const searchStr = (st.name + ' ' + st.parentName).toLowerCase();
+      const visible = !q || searchStr.includes(q);
       content.appendChild(h('button', {
-        className: 'item-btn',
+        className: 'item-btn student-item',
+        'data-search': searchStr,
+        style: { display: visible ? '' : 'none' },
         onclick: () => navigate('log', { selStudent: st })
       },
         h('div', {},
@@ -796,16 +808,26 @@ function renderParents() {
     content.appendChild(h('input', {
       className: 'search-input', type: 'text', placeholder: 'Search parents...',
       value: state.searchQuery,
-      oninput: (e) => { state.searchQuery = e.target.value; render(); }
+      id: 'parent-search',
+      oninput: (e) => {
+        state.searchQuery = e.target.value;
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll('.parent-item').forEach(el => {
+          const match = !q || el.dataset.search.includes(q);
+          el.style.display = match ? '' : 'none';
+        });
+      }
     }));
 
     const q = state.searchQuery.toLowerCase();
-    const filtered = q ? state.parents.filter(p => p.name.toLowerCase().includes(q)) : state.parents;
-
-    filtered.sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+    state.parents.sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
       const studentCount = state.students.filter(s => s.parentId === p.id).length;
+      const searchStr = p.name.toLowerCase();
+      const visible = !q || searchStr.includes(q);
       content.appendChild(h('button', {
-        className: 'item-btn',
+        className: 'item-btn parent-item',
+        'data-search': searchStr,
+        style: { display: visible ? '' : 'none' },
         onclick: () => navigate('editParent', { selParent: p })
       },
         h('div', {},
