@@ -347,12 +347,12 @@ function getPrice(student, typeId) {
 
 function getParentName(parentId) {
   const p = state.parents.find(p => p.id === parentId);
-  return p ? p.name : '?';
+  return p ? p.name : '(unknown parent)';
 }
 
 function getStudentName(studentId) {
   const s = state.students.find(s => s.id === studentId);
-  return s ? s.name : '?';
+  return s ? s.name : '(unknown student)';
 }
 
 function getLessonType(id) { return LESSON_TYPES.find(t => t.id === id) || LESSON_TYPES[0]; }
