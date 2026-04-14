@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Invoice Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F5F3EF; --card: #FFFFFF; --text: #1A1A1A; --muted: #8B8B8B;
+  --border: #E2DFD9; --accent: #8B5E3C; --accent-lt: #F5EDE6;
+  --warm: #EDE8E1; --danger: #C1453B; --danger-lt: #FFF0EF;
+  --success: #2D6A4F; --success-lt: #E9F5EE;
+  --radius: 14px; --font: 'DM Sans', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); max-width: 600px; margin: 0 auto; min-height: 100vh; padding-bottom: 40px; -webkit-font-smoothing: antialiased; }
+button { font-family: var(--font); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+input, textarea { font-family: var(--font); }
+
+.header { display: flex; align-items: center; justify-content: center; padding: 18px 20px; border-bottom: 1px solid var(--border); background: var(--card); }
+.header h1 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: var(--accent); }
+.content { padding: 16px 20px; }
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 5px; }
+.form-input { width: 100%; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--border); font-size: 15px; background: var(--card); outline: none; }
+.form-input:focus { border-color: var(--accent); }
+textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+.btn-primary { width: 100%; padding: 14px; border-radius: var(--radius); border: none; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
+.btn-primary:disabled { opacity: 0.4; cursor: default; }
+.btn-secondary { width: 100%; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 13px; font-weight: 600; }
+.btn-danger { width: 100%; padding: 12px; border-radius: var(--radius); border: none; background: var(--danger); color: #fff; font-size: 14px; font-weight: 700; }
+
+.info-box { background: var(--accent-lt); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; border: 1px solid rgba(139,94,60,0.12); }
+.info-text { font-size: 13px; line-height: 1.4; color: var(--accent); }
+.error-box { background: var(--danger-lt); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; border: 1px solid rgba(193,69,59,0.15); font-size: 13px; color: var(--danger); }
+.success-box { background: var(--success-lt); border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; border: 1px solid rgba(45,106,79,0.15); font-size: 13px; color: var(--success); }
+
+.step-indicator { display: flex; gap: 8px; margin-bottom: 18px; }
+.step { flex: 1; height: 4px; border-radius: 2px; background: var(--border); }
+.step.active { background: var(--accent); }
+.step.done { background: var(--success); }
+
+/* Invoice cards */
+.invoice-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
+.invoice-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.invoice-name { font-size: 15px; font-weight: 700; }
+.invoice-total { font-size: 15px; font-weight: 700; color: var(--accent); }
+.invoice-match { font-size: 11px; margin-top: 2px; }
+.invoice-match.found { color: var(--success); }
+.invoice-match.missing { color: var(--danger); }
+.invoice-lines { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.invoice-status { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.invoice-status.pending { background: var(--warm); color: var(--muted); }
+.invoice-status.created { background: var(--success-lt); color: var(--success); }
+.invoice-status.error { background: var(--danger-lt); color: var(--danger); }
+.invoice-status.skipped { background: var(--warm); color: var(--muted); }
+
+.invoice-toggle { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.toggle-btn { padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); font-size: 11px; font-weight: 600; color: var(--muted); }
+.toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.divider { border-top: 1px solid var(--border); margin: 18px 0; }
+
+.summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+.summary-row.total { font-weight: 800; font-size: 16px; border-top: 2px solid var(--text); padding-top: 10px; margin-top: 6px; }
+
+.loading { text-align: center; padding: 30px; color: var(--muted); font-size: 14px; }
+.spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.results-list { margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<div class="header"><h1>Invoice Generator</h1></div>
+<div class="content" id="app"></div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+
+let state = {
+  step: 'settings', // settings, paste, preview, generating, results
+  apiUrl: localStorage.getItem('ig_api_url') || '',
+  mollieKey: localStorage.getItem('ig_mollie_key') || '',
+  exportText: '',
+  invoices: [],       // parsed from export
+  mollieCustomers: [], // fetched from Mollie
+  results: [],        // creation results
+  error: null,
+};
+
+// ─── API ─────────────────────────────────────────────────────────────────────
+
+async function api(body) {
+  try {
+    const r = await fetch(state.apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    return await r.json();
+  } catch (e) {
+    console.error('API error:', e);
+    return { error: 'Connection error: ' + e.message };
+  }
+}
+
+// ─── Parser ──────────────────────────────────────────────────────────────────
+
+function parseExport(text) {
+  const invoices = [];
+  let currentParent = null;
+  
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Parent line: "▸ Parent Name"
+    if (trimmed.startsWith('▸')) {
+      const name = trimmed.substring(1).trim();
+      currentParent = { name, lines: [], total: 0 };
+      invoices.push(currentParent);
+      continue;
+    }
+    
+    // Lesson line: "  2026-04-14 18:35  Student  Type  1h × €50 = €50.00"
+    if (currentParent && trimmed.match(/^\d{4}-\d{2}-\d{2}/)) {
+      const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})?\s+(.+?)\s+(Ind · Pres|Ind · Online|Group · Pres|Group · Online)\s+(\d+\.?\d*)\s*h\s*×\s*€\s*(\d+\.?\d*)\s*=\s*€\s*(\d+\.?\d*)/);
+      if (match) {
+        currentParent.lines.push({
+          date: match[1],
+          time: match[2] || '',
+          student: match[3].trim(),
+          type: match[4],
+          duration: parseFloat(match[5]),
+          pricePerHour: parseFloat(match[6]),
+          total: parseFloat(match[7]),
+          // For Mollie API
+          description: match[3].trim() + ' — ' + match[4] + ' — ' + match[1] + (match[2] ? ' ' + match[2] : '') + ' — ' + match[5] + 'h',
+          quantity: 1,
+          unitPrice: parseFloat(match[7]),
+        });
+        currentParent.total += parseFloat(match[7]);
+      }
+      continue;
+    }
+    
+    // Invoice total line: "  INVOICE TOTAL: €123.45"
+    // (we already calculated total from lines, skip)
+  }
+  
+  return invoices;
+}
+
+// ─── Name matching ───────────────────────────────────────────────────────────
+
+function normalize(name) {
+  return name.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+    .replace(/[^a-z0-9\s]/g, '') // remove special chars
+    .replace(/\s+/g, ' ').trim();
+}
+
+function findMollieCustomer(parentName, customers) {
+  const normParent = normalize(parentName);
+  
+  // Exact match (normalized)
+  let match = customers.find(c => normalize(c.name) === normParent);
+  if (match) return { customer: match, confidence: 'exact' };
+  
+  // All words from parent name found in customer name
+  const parentWords = normParent.split(' ');
+  match = customers.find(c => {
+    const custNorm = normalize(c.name);
+    return parentWords.every(w => custNorm.includes(w));
+  });
+  if (match) return { customer: match, confidence: 'high' };
+  
+  // Customer words all found in parent name
+  match = customers.find(c => {
+    const custWords = normalize(c.name).split(' ');
+    return custWords.length >= 2 && custWords.every(w => normParent.includes(w));
+  });
+  if (match) return { customer: match, confidence: 'high' };
+  
+  // Last name match (at least 2 words matching)
+  match = customers.find(c => {
+    const custWords = normalize(c.name).split(' ');
+    const matching = parentWords.filter(w => custWords.includes(w));
+    return matching.length >= 2;
+  });
+  if (match) return { customer: match, confidence: 'medium' };
+  
+  // Single last-name match (last word)
+  const parentLast = parentWords[parentWords.length - 1];
+  if (parentLast.length >= 3) {
+    match = customers.find(c => {
+      const custWords = normalize(c.name).split(' ');
+      return custWords[custWords.length - 1] === parentLast;
+    });
+    if (match) return { customer: match, confidence: 'low' };
+  }
+  
+  return null;
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+
+function render() {
+  const app = document.getElementById('app');
+  const views = {
+    settings: renderSettings,
+    paste: renderPaste,
+    preview: renderPreview,
+    generating: renderGenerating,
+    results: renderResults,
+  };
+  app.innerHTML = '';
+  const el = (views[state.step] || renderSettings)();
+  app.appendChild(el);
+}
+
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('on')) el[k] = v;
+    else if (k === 'className') el.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else if (k === 'innerHTML') el.innerHTML = v;
+    else el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null) continue;
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return el;
+}
+
+function renderSteps(current) {
+  const steps = ['settings', 'paste', 'preview', 'results'];
+  const idx = steps.indexOf(current);
+  const wrap = h('div', { className: 'step-indicator' });
+  steps.forEach((s, i) => {
+    wrap.appendChild(h('div', { className: 'step' + (i < idx ? ' done' : i === idx ? ' active' : '') }));
+  });
+  return wrap;
+}
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+function renderSettings() {
+  const wrap = h('div');
+  wrap.appendChild(renderSteps('settings'));
+
+  wrap.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text', innerHTML: 'Configure your connections. You need:<br>• The Apps Script URL (proxy for Mollie API)<br>• Your Mollie Live API key' })
+  ));
+
+  wrap.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'Apps Script URL'),
+    h('input', { className: 'form-input', type: 'url', id: 'cfg-url', value: state.apiUrl, placeholder: 'https://script.google.com/macros/s/...' })
+  ));
+
+  wrap.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'Mollie Live API key'),
+    h('input', { className: 'form-input', type: 'password', id: 'cfg-key', value: state.mollieKey, placeholder: 'live_...' })
+  ));
+
+  wrap.appendChild(h('button', { className: 'btn-primary', onclick: () => {
+    const url = document.getElementById('cfg-url').value.trim();
+    const key = document.getElementById('cfg-key').value.trim();
+    state.apiUrl = url;
+    state.mollieKey = key;
+    localStorage.setItem('ig_api_url', url);
+    localStorage.setItem('ig_mollie_key', key);
+    state.step = 'paste';
+    render();
+  }}, 'Continue'));
+
+  return wrap;
+}
+
+// ─── Paste ───────────────────────────────────────────────────────────────────
+
+function renderPaste() {
+  const wrap = h('div');
+  wrap.appendChild(renderSteps('paste'));
+
+  wrap.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text' }, 'Paste the export from the Lesson Logger app. Use the "Copy invoice data" button in the Export section.')
+  ));
+
+  wrap.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'Invoice export data'),
+    h('textarea', { className: 'form-input', id: 'export-text', rows: '12', placeholder: 'INVOICE DATA — April 2026\n═══════\n\n▸ Parent Name\n  2026-04-14 18:00  Student  Ind · Pres  1h × €50 = €50.00\n  ...' })
+  ));
+
+  if (state.error) {
+    wrap.appendChild(h('div', { className: 'error-box' }, state.error));
+  }
+
+  wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: async () => {
+    const text = document.getElementById('export-text').value;
+    if (!text.trim()) { state.error = 'Please paste the export data'; render(); return; }
+    
+    const invoices = parseExport(text);
+    if (invoices.length === 0) { state.error = 'Could not parse any invoices from this text'; render(); return; }
+    
+    state.exportText = text;
+    state.invoices = invoices;
+    state.error = null;
+    
+    // Fetch Mollie customers for matching
+    const btn = document.querySelector('.btn-primary');
+    btn.textContent = 'Fetching customers from Mollie...';
+    btn.disabled = true;
+    
+    const result = await api({ action: 'listCustomers', apiKey: state.mollieKey });
+    if (result?.success) {
+      state.mollieCustomers = result.customers;
+      
+      // Match each invoice to a customer
+      state.invoices.forEach(inv => {
+        const match = findMollieCustomer(inv.name, state.mollieCustomers);
+        if (match) {
+          inv.mollieCustomer = match.customer;
+          inv.matchConfidence = match.confidence;
+          inv.include = true;
+        } else {
+          inv.mollieCustomer = null;
+          inv.matchConfidence = null;
+          inv.include = false;
+        }
+      });
+      
+      state.step = 'preview';
+    } else {
+      state.error = result?.error || 'Failed to fetch customers';
+    }
+    render();
+  }}, 'Parse & match customers'));
+
+  wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'settings'; render(); } }, '← Settings'));
+
+  return wrap;
+}
+
+// ─── Preview ─────────────────────────────────────────────────────────────────
+
+function renderPreview() {
+  const wrap = h('div');
+  wrap.appendChild(renderSteps('preview'));
+
+  const matched = state.invoices.filter(i => i.mollieCustomer);
+  const unmatched = state.invoices.filter(i => !i.mollieCustomer);
+  const toGenerate = state.invoices.filter(i => i.include);
+  const grandTotal = toGenerate.reduce((s, i) => s + i.total, 0);
+
+  // Summary
+  wrap.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text', innerHTML:
+      '<strong>' + state.invoices.length + '</strong> invoices parsed · ' +
+      '<strong style="color:var(--success)">' + matched.length + '</strong> matched · ' +
+      '<strong style="color:var(--danger)">' + unmatched.length + '</strong> unmatched'
+    })
+  ));
+
+  // Invoice cards
+  state.invoices.forEach((inv, idx) => {
+    const card = h('div', { className: 'invoice-card' });
+    
+    // Header
+    const header = h('div', { className: 'invoice-header' },
+      h('span', { className: 'invoice-name' }, inv.name),
+      h('span', { className: 'invoice-total' }, '€' + inv.total.toFixed(2))
+    );
+    card.appendChild(header);
+    
+    // Match status
+    if (inv.mollieCustomer) {
+      const conf = inv.matchConfidence === 'exact' ? '' : ' (' + inv.matchConfidence + ' match)';
+      card.appendChild(h('div', { className: 'invoice-match found' },
+        '✓ ' + inv.mollieCustomer.name + conf + (inv.mollieCustomer.email ? ' · ' + inv.mollieCustomer.email : '')
+      ));
+    } else {
+      card.appendChild(h('div', { className: 'invoice-match missing' }, '✗ No matching Mollie customer found'));
+    }
+    
+    // Lines
+    const linesText = inv.lines.map(l => l.student + ' · ' + l.type + ' · ' + l.duration + 'h × €' + l.pricePerHour).join('\n');
+    card.appendChild(h('div', { className: 'invoice-lines' }, linesText));
+    
+    // Include toggle
+    const toggle = h('div', { className: 'invoice-toggle' });
+    const inclBtn = h('button', {
+      className: 'toggle-btn' + (inv.include ? ' active' : ''),
+      onclick: () => { inv.include = true; render(); }
+    }, 'Include');
+    const skipBtn = h('button', {
+      className: 'toggle-btn' + (!inv.include ? ' active' : ''),
+      onclick: () => { inv.include = false; render(); }
+    }, 'Skip');
+    toggle.appendChild(inclBtn);
+    toggle.appendChild(skipBtn);
+    if (!inv.mollieCustomer) {
+      toggle.appendChild(h('span', { style: { fontSize: '11px', color: 'var(--danger)' } }, ' Cannot generate without Mollie match'));
+    }
+    card.appendChild(toggle);
+    
+    wrap.appendChild(card);
+  });
+
+  // Summary
+  wrap.appendChild(h('div', { className: 'divider' }));
+  wrap.appendChild(h('div', { className: 'summary-row' },
+    h('span', {}, 'Invoices to generate'),
+    h('span', {}, String(toGenerate.length))
+  ));
+  wrap.appendChild(h('div', { className: 'summary-row total' },
+    h('span', {}, 'Total'),
+    h('span', {}, '€' + grandTotal.toFixed(2))
+  ));
+
+  // Buttons
+  const canGenerate = toGenerate.length > 0 && toGenerate.every(i => i.mollieCustomer);
+  
+  wrap.appendChild(h('button', {
+    className: 'btn-primary',
+    style: { marginTop: '18px', marginBottom: '10px' },
+    disabled: !canGenerate ? 'disabled' : undefined,
+    onclick: () => generateInvoices()
+  }, canGenerate ? 'Create ' + toGenerate.length + ' draft invoice' + (toGenerate.length !== 1 ? 's' : '') + ' in Mollie' : 'Fix unmatched customers to continue'));
+
+  wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'paste'; state.error = null; render(); } }, '← Back to paste'));
+
+  return wrap;
+}
+
+// ─── Generate ────────────────────────────────────────────────────────────────
+
+async function generateInvoices() {
+  const toGenerate = state.invoices.filter(i => i.include && i.mollieCustomer);
+  state.step = 'generating';
+  state.results = [];
+  render();
+  
+  const mollieInvoices = toGenerate.map(inv => ({
+    customerId: inv.mollieCustomer.id,
+    customerName: inv.name,
+    customerEmail: inv.mollieCustomer.email || '',
+    lines: inv.lines.map(l => ({
+      description: l.description,
+      quantity: 1,
+      unitPrice: l.total,
+    })),
+    memo: 'Generated from Lesson Logger',
+  }));
+  
+  // Send in small batches to avoid timeout
+  const BATCH = 5;
+  for (let i = 0; i < mollieInvoices.length; i += BATCH) {
+    const batch = mollieInvoices.slice(i, i + BATCH);
+    const result = await api({
+      action: 'createBatchInvoices',
+      apiKey: state.mollieKey,
+      invoices: batch,
+    });
+    
+    if (result?.success && result.results) {
+      state.results.push(...result.results);
+    } else {
+      // Mark remaining as failed
+      batch.forEach(inv => {
+        state.results.push({ customerName: inv.customerName, result: { error: result?.error || 'Batch failed' } });
+      });
+    }
+    render();
+  }
+  
+  state.step = 'results';
+  render();
+}
+
+function renderGenerating() {
+  const toGenerate = state.invoices.filter(i => i.include && i.mollieCustomer);
+  const done = state.results.length;
+  const total = toGenerate.length;
+  
+  const wrap = h('div');
+  wrap.appendChild(h('div', { className: 'loading' },
+    h('span', { className: 'spinner' }),
+    'Creating invoices... ' + done + '/' + total
+  ));
+  
+  if (state.results.length > 0) {
+    const list = h('div', { className: 'results-list' });
+    state.results.forEach(r => {
+      const ok = r.result?.success;
+      list.appendChild(h('div', { className: 'invoice-card' },
+        h('div', { className: 'invoice-header' },
+          h('span', { className: 'invoice-name' }, r.customerName),
+          h('span', { className: 'invoice-status ' + (ok ? 'created' : 'error') }, ok ? '✓ Created' : '✗ Error')
+        ),
+        ok ? null : h('div', { className: 'invoice-match missing' }, r.result?.error || 'Unknown error')
+      ));
+    });
+    wrap.appendChild(list);
+  }
+  
+  return wrap;
+}
+
+// ─── Results ─────────────────────────────────────────────────────────────────
+
+function renderResults() {
+  const wrap = h('div');
+  wrap.appendChild(renderSteps('results'));
+
+  const succeeded = state.results.filter(r => r.result?.success);
+  const failed = state.results.filter(r => !r.result?.success);
+
+  if (succeeded.length > 0) {
+    wrap.appendChild(h('div', { className: 'success-box' },
+      '✓ ' + succeeded.length + ' draft invoice' + (succeeded.length !== 1 ? 's' : '') + ' created in Mollie. Review and send them from your Mollie Dashboard → Invoicing.'
+    ));
+  }
+
+  if (failed.length > 0) {
+    wrap.appendChild(h('div', { className: 'error-box' },
+      '✗ ' + failed.length + ' invoice' + (failed.length !== 1 ? 's' : '') + ' failed.'
+    ));
+  }
+
+  state.results.forEach(r => {
+    const ok = r.result?.success;
+    const card = h('div', { className: 'invoice-card' },
+      h('div', { className: 'invoice-header' },
+        h('span', { className: 'invoice-name' }, r.customerName),
+        h('span', { className: 'invoice-status ' + (ok ? 'created' : 'error') }, ok ? '✓ Draft created' : '✗ Failed')
+      )
+    );
+    if (ok && r.result.invoiceNumber) {
+      card.appendChild(h('div', { className: 'invoice-match found' }, 'Invoice #' + r.result.invoiceNumber));
+    }
+    if (!ok) {
+      card.appendChild(h('div', { className: 'invoice-match missing' }, r.result?.error || 'Unknown error'));
+    }
+    wrap.appendChild(card);
+  });
+
+  wrap.appendChild(h('div', { className: 'divider' }));
+
+  wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: () => {
+    state.step = 'paste';
+    state.invoices = [];
+    state.results = [];
+    state.error = null;
+    render();
+  }}, 'Generate more invoices'));
+
+  wrap.appendChild(h('a', {
+    href: 'https://my.mollie.com/dashboard/invoicing',
+    target: '_blank',
+    style: { display: 'block', textAlign: 'center', color: 'var(--accent)', fontSize: '14px', fontWeight: '600', marginTop: '10px', textDecoration: 'none' }
+  }, 'Open Mollie Dashboard →'));
+
+  return wrap;
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+if (state.apiUrl && state.mollieKey) state.step = 'paste';
+render();
+</script>
+</body>
+</html>
