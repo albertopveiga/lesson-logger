@@ -357,8 +357,21 @@ function getStudentName(studentId) {
 
 function getLessonType(id) { return LESSON_TYPES.find(t => t.id === id) || LESSON_TYPES[0]; }
 function getCurrentMonth() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; }
-function getMonthLabel(ds) { return new Date(ds + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
-function formatDate(ds) { return new Date(ds).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }); }
+function getMonthLabel(ds) {
+  var parts = String(ds).split('-');
+  var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, 1);
+  return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+function formatDate(ds) {
+  var s = String(ds).slice(0, 10);
+  // Parse YYYY-MM-DD manually to avoid timezone issues
+  var parts = s.split('-');
+  if (parts.length === 3) {
+    var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+    return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  return s;
+}
 
 function showToast(msg) {
   state.toast = msg;
