@@ -322,7 +322,12 @@ async function loadAll() {
   if (data && !data.error) {
     state.parents = data.parents || [];
     state.students = data.students || [];
-    state.lessons = data.lessons || [];
+    state.lessons = (data.lessons || []).map(l => ({
+      ...l,
+      duration: parseFloat(String(l.duration).replace(',', '.')) || 0,
+      pricePerHour: parseFloat(String(l.pricePerHour).replace(',', '.')) || 0,
+      total: parseFloat(String(l.total).replace(',', '.')) || 0,
+    }));
     if (data.config) {
       state.config = {
         ind_pres: Number(data.config.price_ind_pres) || DEFAULT_PRICES.ind_pres,
