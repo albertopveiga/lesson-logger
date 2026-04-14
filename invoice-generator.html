@@ -160,7 +160,7 @@ function parseExport(text) {
 // ─── Name matching ───────────────────────────────────────────────────────────
 
 function normalize(name) {
-  return name.toLowerCase()
+  return String(name || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
     .replace(/[^a-z0-9\s]/g, '') // remove special chars
     .replace(/\s+/g, ' ').trim();
@@ -168,6 +168,7 @@ function normalize(name) {
 
 function findMollieCustomer(parentName, customers) {
   const normParent = normalize(parentName);
+  console.log('Matching "' + parentName + '" (normalized: "' + normParent + '") against ' + customers.length + ' customers');
   
   // Exact match (normalized)
   let match = customers.find(c => normalize(c.name) === normParent);
@@ -323,6 +324,9 @@ function renderPaste() {
     const result = await api({ action: 'listCustomers', apiKey: state.mollieKey });
     if (result?.success) {
       state.mollieCustomers = result.customers;
+      console.log('Fetched ' + result.customers.length + ' Mollie customers');
+      console.log('First 5:', result.customers.slice(0, 5).map(c => c.name));
+      console.log('Looking for:', state.invoices.map(i => i.name));
       
       // Match each invoice to a customer
       state.invoices.forEach(inv => {
