@@ -200,9 +200,34 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 .lesson-total { font-size: 13px; font-weight: 700; color: var(--accent); min-width: 50px; text-align: right; }
 .lesson-del { background: none; border: none; color: var(--danger); font-size: 16px; padding: 2px 4px; }
 
-/* ─── Export ─── */
-.export-block { background: var(--warm); border-radius: 12px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--border); overflow: auto; max-height: 380px; }
-.export-pre { font-size: 11px; line-height: 1.5; margin: 0; white-space: pre-wrap; font-family: 'SF Mono', 'Fira Code', monospace; }
+/* ─── Agenda (day-planner review) ─── */
+.agenda-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.agenda-nav button { flex: 0 0 auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 16px; font-weight: 700; color: var(--accent); }
+.agenda-nav button:active { background: var(--accent-lt); }
+.agenda-date { flex: 1; text-align: center; font-size: 15px; font-weight: 700; }
+.agenda-summary { background: var(--accent-lt); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; font-size: 13px; color: var(--accent); font-weight: 600; }
+.agenda-grid { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.agenda-row { display: flex; height: 60px; border-top: 1px solid var(--border); }
+.agenda-row:first-child { border-top: none; }
+.agenda-hour { flex: 0 0 52px; padding: 4px 8px 0 10px; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.02em; border-right: 1px solid var(--border); }
+.agenda-slot { flex: 1; position: relative; }
+.agenda-blocks { position: absolute; left: 52px; right: 0; top: 0; bottom: 0; pointer-events: none; }
+.agenda-block {
+  position: absolute; left: 6px; right: 6px;
+  background: var(--accent); color: #fff; border-radius: 10px;
+  padding: 6px 10px; overflow: hidden; pointer-events: auto; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(27,67,50,0.15);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.agenda-block:active { background: var(--accent-dk); }
+.agenda-block-time { font-size: 10px; font-weight: 700; opacity: 0.85; letter-spacing: 0.02em; }
+.agenda-block-name { font-size: 13px; font-weight: 700; line-height: 1.2; margin-top: 1px; }
+.agenda-block-meta { font-size: 11px; opacity: 0.9; margin-top: 1px; }
+.agenda-block-price { font-size: 11px; font-weight: 700; margin-top: auto; align-self: flex-end; }
+.agenda-block.compact { padding: 3px 8px; }
+.agenda-block.compact .agenda-block-name { font-size: 12px; }
+.agenda-block.compact .agenda-block-meta { display: none; }
+.agenda-block.compact .agenda-block-price { display: none; }
 
 /* ─── Info / Warning ─── */
 .info-box { background: var(--accent-lt); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid rgba(45,106,79,0.12); }
@@ -264,7 +289,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 
 <div id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 21:15 UTC
+  v2026-04-18 22:00 UTC
 </div>
 
 <script>
@@ -463,7 +488,7 @@ function render() {
     editStudent: renderEditStudent,
     pricing: renderPricing,
     history: renderHistory,
-    export: renderExport,
+    review: renderReview,
     settings: renderSettings,
   };
 
@@ -1243,67 +1268,141 @@ function renderHistory() {
   return wrap;
 }
 
-function renderExport() {
-  const wrap = h('div');
-  wrap.appendChild(renderHeader('Export for Invoicing', () => navigate('home')));
+// ─── Review (daily-planner agenda view) ────────────────────────────────────
+// Day at a time, auto-fit hour range (08:00–20:00 fallback), lessons rendered
+// as absolutely-positioned blocks with height proportional to duration.
+// Tap a block to edit. Empty slots are inert.
+const AGENDA_PX_PER_HOUR = 60;
+const AGENDA_FALLBACK_START = 8;   // 08:00
+const AGENDA_FALLBACK_END = 20;    // 20:00 (exclusive, so rows 08–19 are drawn)
 
-  if (state.lessons.length === 0) {
-    wrap.appendChild(h('div', { className: 'empty' }, h('div', { className: 'empty-icon' }, '📊'), h('p', { className: 'empty-text' }, 'No lessons to export')));
-    return wrap;
-  }
+function parseTimeToMin(t) {
+  if (!t) return null;
+  var parts = String(t).split(':');
+  if (parts.length < 2) return null;
+  var hh = parseInt(parts[0], 10);
+  var mm = parseInt(parts[1], 10);
+  if (isNaN(hh) || isNaN(mm)) return null;
+  return hh * 60 + mm;
+}
+
+function addDaysYMD(ymd, delta) {
+  var p = String(ymd).split('-');
+  var d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+  d.setDate(d.getDate() + delta);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function renderReview() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Review', () => navigate('home')));
 
   const content = h('div', { className: 'content' });
 
-  // Month picker
-  const allMonths = [...new Set(state.lessons.map(l => String(l.date).slice(0, 7)))].sort((a,b) => b.localeCompare(a));
-  const cm = getCurrentMonth();
-  const selectedMonth = state._exportMonth || cm;
+  // Day picker — default to today (or the last recorded day if today is empty and no prior selection)
+  const now = new Date();
+  const todayYmd = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  const selectedDate = state._reviewDate || todayYmd;
 
-  const select = h('select', {
-    className: 'form-input', style: { marginBottom: '14px' },
-    onchange: (e) => { state._exportMonth = e.target.value; render(); }
-  },
-    ...allMonths.map(m => {
-      const opt = h('option', { value: m }, getMonthLabel(m));
-      if (m === selectedMonth) opt.selected = true;
-      return opt;
-    })
+  // Day navigator
+  const nav = h('div', { className: 'agenda-nav' },
+    h('button', { onclick: () => { state._reviewDate = addDaysYMD(selectedDate, -1); render(); } }, '‹'),
+    h('input', {
+      className: 'form-input', type: 'date', value: selectedDate,
+      style: { flex: '1', textAlign: 'center', fontWeight: '700' },
+      onchange: (e) => { state._reviewDate = e.target.value || todayYmd; render(); }
+    }),
+    h('button', { onclick: () => { state._reviewDate = addDaysYMD(selectedDate, 1); render(); } }, '›'),
+    h('button', {
+      onclick: () => { state._reviewDate = todayYmd; render(); },
+      style: { fontSize: '12px', padding: '8px 10px' }
+    }, 'Today')
   );
-  content.appendChild(select);
+  content.appendChild(nav);
 
-  const ml = state.lessons.filter(l => String(l.date).startsWith(selectedMonth));
+  // Day's lessons
+  const dayLessons = state.lessons
+    .filter(l => String(l.date).slice(0, 10) === selectedDate)
+    .map(l => {
+      const startMin = parseTimeToMin(l.time);
+      const durMin = Math.max(15, Math.round(Number(l.duration) * 60));
+      return { l, startMin: startMin == null ? 9 * 60 : startMin, durMin };
+    })
+    .sort((a, b) => a.startMin - b.startMin);
 
-  if (ml.length === 0) {
-    content.appendChild(h('div', { className: 'empty', style: { paddingTop: '20px' } }, h('p', { className: 'empty-text' }, 'No lessons in this month')));
-    wrap.appendChild(content);
-    return wrap;
+  // Summary row
+  const dayTotal = dayLessons.reduce((s, x) => s + Number(x.l.total || 0), 0);
+  const dayHours = dayLessons.reduce((s, x) => s + Number(x.l.duration || 0), 0);
+  content.appendChild(h('div', { className: 'agenda-summary' },
+    h('span', {}, dayLessons.length + (dayLessons.length === 1 ? ' lesson' : ' lessons') + ' · ' + dayHours + 'h'),
+    h('span', {}, '€' + dayTotal.toFixed(2))
+  ));
+
+  // Determine hour range — auto-fit based on lessons, fallback otherwise
+  let startH, endH;
+  if (dayLessons.length === 0) {
+    startH = AGENDA_FALLBACK_START;
+    endH = AGENDA_FALLBACK_END;
+  } else {
+    const minStart = Math.min(...dayLessons.map(x => x.startMin));
+    const maxEnd = Math.max(...dayLessons.map(x => x.startMin + x.durMin));
+    startH = Math.min(AGENDA_FALLBACK_START, Math.floor(minStart / 60));
+    endH = Math.max(AGENDA_FALLBACK_END, Math.ceil(maxEnd / 60));
+    // Safety clamps
+    if (startH < 0) startH = 0;
+    if (endH > 24) endH = 24;
   }
 
-  const byParent = {};
-  ml.forEach(l => {
-    const pid = l.parentId || 'x';
-    if (!byParent[pid]) byParent[pid] = { name: getParentName(pid), lessons: [] };
-    byParent[pid].lessons.push(l);
+  const hourCount = endH - startH;
+  const gridHeight = hourCount * AGENDA_PX_PER_HOUR;
+
+  // Build hour rows (time gutter + empty slot column) — the grid backdrop.
+  const grid = h('div', { className: 'agenda-grid', style: { height: gridHeight + 'px' } });
+  for (let i = 0; i < hourCount; i++) {
+    const hh = String(startH + i).padStart(2, '0');
+    grid.appendChild(h('div', { className: 'agenda-row' },
+      h('div', { className: 'agenda-hour' }, hh + ':00'),
+      h('div', { className: 'agenda-slot' })
+    ));
+  }
+
+  // Overlay: absolutely-positioned lesson blocks
+  const overlay = h('div', { className: 'agenda-blocks', style: { height: gridHeight + 'px' } });
+  dayLessons.forEach(({ l, startMin, durMin }) => {
+    const topPx = ((startMin - startH * 60) / 60) * AGENDA_PX_PER_HOUR;
+    const heightPx = Math.max(28, (durMin / 60) * AGENDA_PX_PER_HOUR - 4); // -4 for vertical breathing room
+    const isCompact = heightPx < 52;
+
+    const startHm = String(Math.floor(startMin / 60)).padStart(2, '0') + ':' + String(startMin % 60).padStart(2, '0');
+    const endTotal = startMin + durMin;
+    const endHm = String(Math.floor(endTotal / 60) % 24).padStart(2, '0') + ':' + String(endTotal % 60).padStart(2, '0');
+
+    const studentName = getStudentName(l.studentId);
+    const typeShort = getLessonType(l.lessonType).short;
+    const priceStr = '€' + Number(l.total || 0).toFixed(2);
+
+    const block = h('div', {
+      className: 'agenda-block' + (isCompact ? ' compact' : ''),
+      style: { top: topPx + 'px', height: heightPx + 'px' },
+      onclick: () => navigate('editLesson', { _editLesson: l })
+    },
+      h('div', { className: 'agenda-block-time' }, startHm + '–' + endHm),
+      h('div', { className: 'agenda-block-name' }, studentName),
+      h('div', { className: 'agenda-block-meta' }, typeShort + ' · ' + l.duration + 'h'),
+      h('div', { className: 'agenda-block-price' }, priceStr)
+    );
+    overlay.appendChild(block);
   });
 
-  let text = 'INVOICE DATA — ' + getMonthLabel(selectedMonth) + '\n' + '═'.repeat(55) + '\n\n';
-  Object.values(byParent).forEach(p => {
-    const pT = p.lessons.reduce((s,l) => s + Number(l.total), 0);
-    text += '▸ ' + p.name + '\n';
-    p.lessons.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.time||'').localeCompare(String(b.time||''))).forEach(l => {
-      const timeStr = l.time ? ' ' + l.time : '';
-      text += '  ' + l.date + timeStr + '  ' + getStudentName(l.studentId) + '  ' + getLessonType(l.lessonType).short + '  ' + l.duration + 'h × €' + l.pricePerHour + ' = €' + Number(l.total).toFixed(2) + '\n';
-    });
-    text += '  INVOICE TOTAL: €' + pT.toFixed(2) + '\n\n';
-  });
-  text += '═'.repeat(55) + '\nGRAND TOTAL: €' + ml.reduce((s,l) => s + Number(l.total), 0).toFixed(2) + '\n';
+  // Wrap grid + overlay in a positioning context
+  const agendaWrap = h('div', { style: { position: 'relative' } }, grid, overlay);
+  content.appendChild(agendaWrap);
 
-  content.appendChild(h('p', { style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' } }, 'Invoice data grouped by parent — copy for Mollie'));
-  content.appendChild(h('div', { className: 'export-block' }, h('pre', { className: 'export-pre' }, text)));
-  content.appendChild(h('button', { className: 'btn-primary', onclick: async () => {
-    try { await navigator.clipboard.writeText(text); showToast('✓ Copied!'); }
-    catch { showToast('⚠️ Copy failed'); }
-  }}, 'Copy invoice data'));
+  if (dayLessons.length === 0) {
+    content.appendChild(h('p', {
+      style: { textAlign: 'center', color: 'var(--muted)', fontSize: '13px', marginTop: '14px' }
+    }, 'No lessons logged on this day'));
+  }
 
   wrap.appendChild(content);
   return wrap;
@@ -1398,8 +1497,8 @@ function renderBottomNav() {
       h('span', { className: 'nav-icon' }, '👥'), h('span', { className: 'nav-label' }, 'Parents')),
     h('button', { className: 'nav-btn', onclick: () => navigate('history') },
       h('span', { className: 'nav-icon' }, '📋'), h('span', { className: 'nav-label' }, 'History')),
-    h('button', { className: 'nav-btn', onclick: () => navigate('export') },
-      h('span', { className: 'nav-icon' }, '📊'), h('span', { className: 'nav-label' }, 'Export'))
+    h('button', { className: 'nav-btn', onclick: () => navigate('review') },
+      h('span', { className: 'nav-icon' }, '🗓️'), h('span', { className: 'nav-label' }, 'Review'))
   );
 }
 
