@@ -264,7 +264,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 
 <div id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 11:10 UTC
+  v2026-04-18 16:55 UTC
 </div>
 
 <script>
@@ -423,11 +423,9 @@ function render() {
     log: renderLog,
     editLesson: renderEditLesson,
     parents: renderParents,
-    addParent: renderAddParent,
     editParent: renderEditParent,
     editStudent: renderEditStudent,
     pricing: renderPricing,
-    bulkImport: renderBulkImport,
     history: renderHistory,
     export: renderExport,
     settings: renderSettings,
@@ -933,12 +931,18 @@ function updateEditTotal() {
 function renderParents() {
   const wrap = h('div');
   wrap.appendChild(renderHeader('Parents & Students', () => navigate('home'),
-    h('button', { className: 'add-btn', onclick: () => navigate('addParent') }, '+ Add')));
+    h('button', { className: 'add-btn', onclick: async () => {
+      showToast('Refreshing from Facturas…');
+      await loadAll();
+      showToast('✓ ' + state.parents.length + ' parents loaded');
+    }}, '↻ Refresh')));
 
   const content = h('div', { className: 'content' });
 
-  content.appendChild(h('button', { className: 'btn-import', onclick: () => navigate('bulkImport') },
-    h('span', {}, '📋'), h('span', {}, 'Paste list from Mollie')));
+  content.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text' },
+      '📄 Parents and students come from the Facturas intake sheet. To add someone new, share the intake form with them — new rows show up here on the next refresh.')));
+
   content.appendChild(h('button', { className: 'btn-import', onclick: () => navigate('pricing') },
     h('span', {}, '💰'), h('span', {}, 'Standard pricing')));
 
@@ -985,29 +989,6 @@ function renderParents() {
   return wrap;
 }
 
-function renderAddParent() {
-  const wrap = h('div');
-  wrap.appendChild(renderHeader('Add Parent', () => navigate('parents')));
-  const content = h('div', { className: 'content' },
-    h('div', { className: 'form-group' },
-      h('label', { className: 'form-label' }, 'Parent name (as in Mollie)'),
-      h('input', { className: 'form-input', type: 'text', id: 'parent-name', placeholder: 'e.g. García López' })
-    ),
-    h('button', { className: 'btn-primary', style: { marginTop: '16px' }, onclick: async () => {
-      const name = document.getElementById('parent-name').value.trim();
-      if (!name) return;
-      const r = await api('POST', { action: 'addParent', name });
-      if (r?.success) {
-        state.parents.push({ id: r.id, name });
-        showToast('✓ Added ' + name);
-        navigate('parents');
-      }
-    }}, 'Add Parent')
-  );
-  wrap.appendChild(content);
-  return wrap;
-}
-
 function renderEditParent() {
   const parent = state.selParent;
   if (!parent) return renderParents();
@@ -1021,54 +1002,25 @@ function renderEditParent() {
   content.appendChild(h('div', { className: 'section-divider' },
     h('span', { className: 'section-label' }, 'Students')));
 
-  students.forEach(st => {
-    content.appendChild(h('button', {
-      className: 'item-btn',
-      onclick: () => navigate('editStudent', { selStudent: st, selParent: parent })
-    },
-      h('span', { className: 'item-name' }, st.name),
-      h('span', { className: 'item-arrow' }, '→')
-    ));
-  });
+  if (students.length === 0) {
+    content.appendChild(h('div', { className: 'empty', style: { paddingTop: '8px' } },
+      h('p', { className: 'empty-text' }, 'No students on this parent\'s Facturas row.')));
+  } else {
+    students.forEach(st => {
+      content.appendChild(h('button', {
+        className: 'item-btn',
+        onclick: () => navigate('editStudent', { selStudent: st, selParent: parent })
+      },
+        h('span', { className: 'item-name' }, st.name),
+        h('span', { className: 'item-arrow' }, '→')
+      ));
+    });
+  }
 
-  // Add student
-  content.appendChild(h('div', { className: 'add-student-row' },
-    h('input', { className: 'form-input', type: 'text', id: 'new-student', placeholder: 'New student name' }),
-    h('button', { className: 'add-student-btn', onclick: async () => {
-      const input = document.getElementById('new-student');
-      const name = input.value.trim();
-      if (!name) return;
-      // Optimistic: show immediately with temp ID
-      const tempId = 'tmp_' + Math.random().toString(36).slice(2, 8);
-      state.students.push({ id: tempId, parentId: parent.id, name, priceOverrides: {} });
-      input.value = '';
-      showToast('✓ Added ' + name);
-      render();
-      // Save in background
-      const r = await api('POST', { action: 'addStudent', parentId: parent.id, name, priceOverrides: {} });
-      if (r?.success) {
-        // Replace temp ID with real ID
-        const idx = state.students.findIndex(s => s.id === tempId);
-        if (idx >= 0) state.students[idx].id = r.id;
-      } else {
-        // Rollback
-        state.students = state.students.filter(s => s.id !== tempId);
-        showToast('⚠️ Failed to save ' + name);
-        render();
-      }
-    }}, 'Add')
-  ));
-
-  // Delete parent
-  content.appendChild(h('button', { className: 'btn-delete', onclick: async () => {
-    if (!confirm('Delete ' + parent.name + ' and all students?')) return;
-    const r = await api('POST', { action: 'deleteParent', id: parent.id });
-    if (r?.success) {
-      state.parents = state.parents.filter(p => p.id !== parent.id);
-      state.students = state.students.filter(s => s.parentId !== parent.id);
-      navigate('parents');
-    }
-  }}, 'Delete parent'));
+  // Facturas note replaces the old "add student" row + "delete parent" button
+  content.appendChild(h('div', { className: 'info-box', style: { marginTop: '16px' } },
+    h('p', { className: 'info-text' },
+      '📄 Students are managed in the Facturas intake sheet. Tap a student above to set per-student pricing overrides.')));
 
   wrap.appendChild(content);
   return wrap;
@@ -1080,12 +1032,18 @@ function renderEditStudent() {
   if (!student || !parent) return renderParents();
 
   const wrap = h('div');
-  wrap.appendChild(renderHeader('Edit Student', () => navigate('editParent', { selParent: parent })));
+  wrap.appendChild(renderHeader(student.name, () => navigate('editParent', { selParent: parent })));
 
   const content = h('div', { className: 'content' });
   content.appendChild(h('div', { className: 'form-group' },
     h('label', { className: 'form-label' }, 'Student name'),
-    h('input', { className: 'form-input', type: 'text', id: 'edit-st-name', value: student.name })
+    h('input', {
+      className: 'form-input', type: 'text', value: student.name,
+      disabled: true,
+      style: { color: 'var(--muted)', backgroundColor: 'var(--card)' }
+    }),
+    h('p', { style: { fontSize: '12px', color: 'var(--muted)', marginTop: '6px' } },
+      '📄 Name comes from Facturas — edit it there if it\'s wrong.')
   ));
 
   content.appendChild(h('p', { className: 'section-label', style: { marginTop: '14px' } }, 'Price overrides (blank = standard)'));
@@ -1105,30 +1063,21 @@ function renderEditStudent() {
   });
 
   content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '18px' }, onclick: async () => {
-    const name = document.getElementById('edit-st-name').value.trim();
-    if (!name) return;
     const ov = {};
     LESSON_TYPES.forEach(t => {
       const v = document.getElementById('ov-' + t.id).value;
       if (v !== '') ov[t.id] = parseFloat(v);
     });
-    const r = await api('POST', { action: 'updateStudent', id: student.id, name, priceOverrides: ov });
+    const r = await api('POST', { action: 'updateStudent', id: student.id, priceOverrides: ov });
     if (r?.success) {
       const idx = state.students.findIndex(s => s.id === student.id);
-      if (idx >= 0) state.students[idx] = { ...student, name, priceOverrides: ov };
+      if (idx >= 0) state.students[idx] = { ...student, priceOverrides: ov };
       showToast('✓ Saved');
       navigate('editParent', { selParent: parent });
+    } else if (r?.error) {
+      showToast('⚠️ ' + r.error);
     }
-  }}, 'Save'));
-
-  content.appendChild(h('button', { className: 'btn-delete', onclick: async () => {
-    if (!confirm('Remove ' + student.name + '?')) return;
-    const r = await api('POST', { action: 'deleteStudent', id: student.id });
-    if (r?.success) {
-      state.students = state.students.filter(s => s.id !== student.id);
-      navigate('editParent', { selParent: parent });
-    }
-  }}, 'Remove student'));
+  }}, 'Save overrides'));
 
   wrap.appendChild(content);
   return wrap;
@@ -1161,65 +1110,6 @@ function renderPricing() {
     showToast('✓ Prices saved');
     navigate('parents');
   }}, 'Save Prices'));
-
-  wrap.appendChild(content);
-  return wrap;
-}
-
-function renderBulkImport() {
-  const wrap = h('div');
-  wrap.appendChild(renderHeader('Bulk Import', () => navigate('parents')));
-  const content = h('div', { className: 'content' });
-
-  content.appendChild(h('div', { className: 'info-box' },
-    h('p', { className: 'info-text', innerHTML: 'Paste parent names, one per line. Optionally add students with a dash:<br><br><code style="font-size:12px">García López - María, Pedro<br>Martínez Ruiz - Ana<br>Fernández Díaz</code>' })
-  ));
-
-  content.appendChild(h('textarea', {
-    className: 'form-input', id: 'bulk-text', rows: '8',
-    placeholder: 'García López - María, Pedro\nMartínez Ruiz - Ana'
-  }));
-
-  content.appendChild(h('button', { className: 'btn-primary', id: 'import-btn', style: { marginTop: '14px' }, onclick: async () => {
-    const text = document.getElementById('bulk-text').value;
-    const existing = new Set(state.parents.map(p => p.name.toLowerCase().trim()));
-    const parents = text.split('\n').map(l => l.trim()).filter(l => l)
-      .map(line => {
-        const m = line.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-        if (m) return { name: m[1].trim(), students: m[2].split(',').map(s => ({ name: s.trim() })).filter(s => s.name) };
-        return { name: line, students: [] };
-      })
-      .filter(p => !existing.has(p.name.toLowerCase()));
-
-    if (parents.length === 0) { showToast('No new parents to import'); return; }
-
-    // Send in chunks of 50 to avoid Google Apps Script timeout
-    const CHUNK = 50;
-    const btn = document.getElementById('import-btn');
-    let imported = 0;
-    let failed = false;
-
-    for (let i = 0; i < parents.length; i += CHUNK) {
-      const chunk = parents.slice(i, i + CHUNK);
-      btn.textContent = 'Importing... ' + Math.min(i + CHUNK, parents.length) + '/' + parents.length;
-      btn.disabled = true;
-
-      const r = await api('POST', { action: 'bulkImportParents', parents: chunk });
-      if (r?.success) {
-        imported += r.count;
-      } else {
-        failed = true;
-        showToast('⚠️ Error at batch ' + (Math.floor(i/CHUNK)+1) + ' — ' + (r?.error || 'unknown'));
-        break;
-      }
-    }
-
-    if (imported > 0) {
-      showToast('✓ Imported ' + imported + ' parents');
-      await loadAll();
-    }
-    navigate('parents');
-  }}, 'Import'));
 
   wrap.appendChild(content);
   return wrap;

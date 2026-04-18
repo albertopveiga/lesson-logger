@@ -1,6 +1,6 @@
 /**
  * Invoice Generator — Google Apps Script API
- * Version: v2026-04-18 14:40 UTC (adds authorizeAll helper for Drive/Sheets scope)
+ * Version: v2026-04-18 16:50 UTC (default city = Den Haag when sheet row leaves it blank)
  *
  * Proxies Mollie API calls and reads the "Facturas" intake spreadsheet for
  * parent/student data. Paste into a NEW Google Apps Script project (or add
@@ -253,7 +253,7 @@ function buildRecipient(row, col) {
     familyName:      nameSplit.familyName,
     streetAndNumber: parsed.street,
     postalCode:      parsed.postcode,
-    city:            parsed.city,
+    city:            parsed.city || 'Den Haag',  // default when the intake row doesn't specify
     country:         'NL',                 // we assume NL; form can override
     locale:          'en_GB',
     _source:         'sheet',
