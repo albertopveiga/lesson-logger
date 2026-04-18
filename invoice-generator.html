@@ -90,7 +90,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 20:00 UTC (no more copy/paste — pulls lessons directly from Lesson Logger)
+  v2026-04-18 20:20 UTC (GET-based lesson-logger fetch + correct getAll action)
 </div>
 
 <script>
@@ -127,17 +127,28 @@ async function api(body) {
 }
 
 // Talks to the lesson-logger Apps Script (separate URL from the invoice
-// generator's). Same POST-with-text-plain pattern so Apps Script accepts it
-// without the preflight dance.
+// generator's). Uses GET rather than POST because:
+//   1. Apps Script web apps redirect POSTs through googleusercontent.com; the
+//      redirected response sometimes trips CORS for cross-project calls
+//      ("Failed to fetch"). GET redirects cleanly.
+//   2. The lesson-logger's doGet router handles the same actions as doPost.
+//   3. All the reads we do here (getAll) have no body to send.
 async function lessonLoggerApi(body) {
   try {
-    const r = await fetch(state.lessonLoggerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body),
-      redirect: 'follow',
+    const params = new URLSearchParams();
+    Object.entries(body || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) params.set(k, String(v));
     });
-    return await r.json();
+    const sep = state.lessonLoggerUrl.indexOf('?') === -1 ? '?' : '&';
+    const url = state.lessonLoggerUrl + sep + params.toString();
+    const r = await fetch(url, { method: 'GET', redirect: 'follow' });
+    // Guard against Apps Script returning HTML (auth/login page) instead of JSON.
+    const text = await r.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: 'Lesson Logger returned non-JSON (first 120 chars): ' + text.substring(0, 120) };
+    }
   } catch (e) {
     console.error('Lesson Logger API error:', e);
     return { error: 'Connection error: ' + e.message };
@@ -163,7 +174,7 @@ function lessonTypeShortLabel(id) {
 // shape the old parseExport() produced (so renderPreview/generateInvoices
 // don't need any changes).
 async function loadInvoicesForMonth(month) {
-  const data = await lessonLoggerApi({ action: 'getAllData' });
+  const data = await lessonLoggerApi({ action: 'getAll' });
   if (!data || data.error) {
     throw new Error((data && data.error) || 'Lesson logger returned no data');
   }
