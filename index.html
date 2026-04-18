@@ -264,7 +264,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 
 <div id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 20:45 UTC
+  v2026-04-18 21:15 UTC
 </div>
 
 <script>
@@ -386,6 +386,42 @@ function showToast(msg) {
   state.toast = msg;
   render();
   setTimeout(() => { state.toast = null; render(); }, 2500);
+}
+
+// ─── Time picker (24h, 15-min steps, mobile-friendly) ───────────────────────
+// Two native <select>s — native selects open OS pickers on phones, and always
+// render as 24h regardless of the user's locale.
+function timePicker(idPrefix, value) {
+  var v = String(value || '09:00');
+  var parts = v.split(':');
+  var hh = parts[0] ? parts[0].padStart(2,'0') : '09';
+  var mmRaw = parts[1] ? parseInt(parts[1], 10) : 0;
+  // Snap to nearest 15-minute slot
+  var snap = Math.round(mmRaw / 15) * 15;
+  if (snap === 60) { snap = 0; hh = String((parseInt(hh,10) + 1) % 24).padStart(2,'0'); }
+  var mm = String(snap).padStart(2,'0');
+
+  var hourOpts = [];
+  for (var i = 0; i < 24; i++) {
+    var s = String(i).padStart(2, '0');
+    hourOpts.push(h('option', { value: s, ...(s === hh ? { selected: 'selected' } : {}) }, s));
+  }
+  var minOpts = ['00','15','30','45'].map(function(s) {
+    return h('option', { value: s, ...(s === mm ? { selected: 'selected' } : {}) }, s);
+  });
+
+  var hourSel = h('select', { className: 'form-input', id: idPrefix + '-hh', style: { flex: '1', textAlign: 'center' } }, ...hourOpts);
+  var minSel = h('select', { className: 'form-input', id: idPrefix + '-mm', style: { flex: '1', textAlign: 'center' } }, ...minOpts);
+  var colon = h('span', { style: { fontSize: '18px', color: 'var(--muted)', alignSelf: 'center' } }, ':');
+
+  return h('div', { style: { display: 'flex', gap: '6px', alignItems: 'stretch' } }, hourSel, colon, minSel);
+}
+
+function readTimeValue(idPrefix) {
+  var hh = document.getElementById(idPrefix + '-hh');
+  var mm = document.getElementById(idPrefix + '-mm');
+  if (!hh || !mm) return '';
+  return hh.value + ':' + mm.value;
 }
 
 function navigate(view, extra = {}) {
@@ -584,10 +620,9 @@ function renderLog() {
     style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' }
   }, getParentName(st.parentId)));
 
-  // Date and Time
+  // Date and Time — default time 09:00, 15-min steps, 24h (handled by timePicker helper)
   const now = new Date();
   const today = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-  const nowTime = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
   const dateTimeRow = h('div', { style: { display: 'flex', gap: '10px' } },
     h('div', { className: 'form-group', style: { flex: '1' } },
       h('label', { className: 'form-label' }, 'Date'),
@@ -595,7 +630,7 @@ function renderLog() {
     ),
     h('div', { className: 'form-group', style: { flex: '1' } },
       h('label', { className: 'form-label' }, 'Time'),
-      h('input', { className: 'form-input', type: 'time', id: 'log-time', value: nowTime })
+      timePicker('log-time', '09:00')
     )
   );
   content.appendChild(dateTimeRow);
@@ -727,7 +762,7 @@ function buildLogPriceBox() {
         const st2 = state.selStudent;
         if (!st2 || !state._selType || state._selDur == null) return;
         const date = document.getElementById('log-date').value;
-        const time = document.getElementById('log-time').value || '';
+        const time = readTimeValue('log-time');
         const selType = state._selType;
         const selDur = state._selDur;
         // Read price at click-time — the stored _customPrice may have changed
@@ -796,7 +831,7 @@ function renderEditLesson() {
     h('p', { className: 'info-text' }, studentName + ' (' + parentName + ')')
   ));
 
-  // Date and Time
+  // Date and Time — 15-min steps, 24h (handled by timePicker helper)
   const dateTimeRow = h('div', { style: { display: 'flex', gap: '10px' } },
     h('div', { className: 'form-group', style: { flex: '1' } },
       h('label', { className: 'form-label' }, 'Date'),
@@ -804,7 +839,7 @@ function renderEditLesson() {
     ),
     h('div', { className: 'form-group', style: { flex: '1' } },
       h('label', { className: 'form-label' }, 'Time'),
-      h('input', { className: 'form-input', type: 'time', id: 'edit-time', value: l.time || '' })
+      timePicker('edit-time', l.time || '09:00')
     )
   );
   content.appendChild(dateTimeRow);
@@ -885,7 +920,7 @@ function renderEditLesson() {
   // Save
   content.appendChild(h('button', { className: 'btn-primary', style: { marginTop: '16px' }, onclick: async () => {
     const date = document.getElementById('edit-date').value;
-    const time = document.getElementById('edit-time').value || '';
+    const time = readTimeValue('edit-time');
     const lessonType = state._editType;
     const duration = state._editDur;
     const pricePerHour = state._editPrice;
