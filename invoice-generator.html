@@ -90,7 +90,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 11:45 UTC
+  v2026-04-18 11:51 UTC
 </div>
 
 <script>
@@ -204,6 +204,14 @@ function saveRecipientBook(book) {
   try { localStorage.setItem('ig_recipients', JSON.stringify(book)); } catch {}
 }
 
+// Mollie wants an ISO 3166-1 alpha-2 country code. Anything else (empty,
+// "Netherlands", "nl", trailing whitespace, etc.) gets normalized to its
+// 2-letter uppercase form — or cleared to empty if it can't be rescued.
+function normalizeCountry(v) {
+  const cleaned = String(v || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+  return cleaned.length === 2 ? cleaned : '';
+}
+
 function loadRecipient(parentName) {
   const book = getRecipientBook();
   const cached = book[normalize(parentName)];
@@ -211,6 +219,8 @@ function loadRecipient(parentName) {
     // Strip any legacy mollieCustomerId field — we tested empirically
     // (2026-04-18) that Mollie ignores it and still requires full address.
     const { mollieCustomerId, ...rest } = cached;
+    // Heal any legacy country value that isn't 2-letter ISO.
+    rest.country = normalizeCountry(rest.country) || 'NL';
     return rest;
   }
   // First time we've seen this parent — seed from the name.
@@ -249,7 +259,10 @@ const REQUIRED_RECIPIENT_FIELDS = [
   { key: 'streetAndNumber', label: 'Street + nr',   check: v => !!v },
   { key: 'postalCode',      label: 'Postcode',      check: v => !!v },
   { key: 'city',            label: 'City',          check: v => !!v },
-  { key: 'country',         label: 'Country',       check: v => !!v },
+  // Mollie requires ISO 3166-1 alpha-2 (two uppercase letters: NL, BE, DE…).
+  // We auto-uppercase and cap length on input to make this near-impossible to
+  // get wrong, but validate here too for legacy entries in the recipient book.
+  { key: 'country',         label: 'Country (2-letter code)', check: v => /^[A-Z]{2}$/.test(String(v || '').trim()) },
 ];
 
 function missingRecipientFields(r) {
@@ -491,7 +504,7 @@ function renderInvoiceCard(inv) {
     const required = fieldIsRequired(key);
     const reqField = REQUIRED_RECIPIENT_FIELDS.find(f => f.key === key);
     const missing = required && !reqField.check(String(inv.recipient[key] || '').trim());
-    const input = h('input', {
+    const attrs = {
       className: 'recipient-input' + (missing ? ' missing' : ''),
       type: opts.type || 'text',
       value: inv.recipient[key] || '',
@@ -499,9 +512,17 @@ function renderInvoiceCard(inv) {
       inputmode: opts.inputmode,
       autocapitalize: opts.autocapitalize,
       spellcheck: 'false',
-    });
+    };
+    if (opts.maxlength) attrs.maxlength = opts.maxlength;
+    const input = h('input', attrs);
     input.addEventListener('input', (e) => {
-      inv.recipient[key] = e.target.value;
+      let value = e.target.value;
+      // Country is ISO 3166-1 alpha-2: strip non-letters, uppercase, cap at 2.
+      if (opts.transform === 'iso-country') {
+        value = value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2);
+        if (value !== e.target.value) e.target.value = value;
+      }
+      inv.recipient[key] = value;
       saveRecipient(inv.name, inv.recipient);
     });
     input.addEventListener('blur', () => { render(); });
@@ -514,7 +535,7 @@ function renderInvoiceCard(inv) {
   grid.appendChild(wrapField('Street + nr *', fieldInput('streetAndNumber', 'Main St 12'), true));
   grid.appendChild(wrapField('Postcode *', fieldInput('postalCode', '1011 AB')));
   grid.appendChild(wrapField('City *', fieldInput('city', 'Amsterdam')));
-  grid.appendChild(wrapField('Country *', fieldInput('country', 'NL', { autocapitalize: 'characters' })));
+  grid.appendChild(wrapField('Country code *', fieldInput('country', 'NL', { autocapitalize: 'characters', maxlength: 2, transform: 'iso-country' })));
 
   details.appendChild(grid);
 
