@@ -90,19 +90,21 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 12:03 UTC
+  v2026-04-18 14:03 UTC
 </div>
 
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 
 let state = {
-  step: 'settings', // settings, paste, preview, generating, results
+  step: 'settings', // settings, paste, syncing, preview, generating, results
   apiUrl: localStorage.getItem('ig_api_url') || '',
   mollieKey: localStorage.getItem('ig_mollie_key') || '',
   exportText: '',
   invoices: [],       // parsed from export, enriched with recipient data
   results: [],        // creation results
+  syncDiagnostics: null, // { totalRows, uniqueParents, matched, unmatched } or null
+  syncWarning: null,  // string if the sheet lookup failed but we fell back
   error: null,
 };
 
@@ -249,6 +251,31 @@ function forgetRecipient(parentName) {
   saveRecipientBook(book);
 }
 
+// Merge sheet data into cached (localStorage) data. Sheet wins where it has a
+// non-empty value; cache fills the gaps. This means the intake sheet is the
+// source of truth — if she corrects a parent's address in the form, the
+// correction is only a stopgap. To make it permanent she should update the
+// sheet. (Over time, filled-in fields that the sheet didn't have — like city
+// — get cached locally and auto-populate next month.)
+function mergeSheetIntoLocal(name, fromSheet) {
+  const local = loadRecipient(name);
+  if (!fromSheet) return Object.assign({}, local, { _source: 'manual', _matched: false });
+  const out = Object.assign({}, local);
+  ['email','givenName','familyName','streetAndNumber','postalCode','city','country','locale'].forEach(k => {
+    const v = fromSheet[k];
+    if (v !== null && v !== undefined && String(v).trim() !== '') {
+      out[k] = String(v).trim();
+    }
+  });
+  // Country from sheet is always 'NL' (per decision), but cached value may be
+  // non-NL if she overrode earlier. We keep the cached override if it's a
+  // valid 2-letter code. Otherwise default to NL.
+  if (!/^[A-Z]{2}$/.test(String(out.country || '').trim())) out.country = 'NL';
+  out._source = 'sheet';
+  out._matched = true;
+  return out;
+}
+
 // Mollie rejects drafts when any of these fields are missing — learned the hard
 // way from "Field 'recipient.city' must be provided". We also tested passing
 // the AR customer UUID as recipientIdentifier (2026-04-18): Mollie ignores it
@@ -287,6 +314,7 @@ function render() {
   const views = {
     settings: renderSettings,
     paste: renderPaste,
+    syncing: renderSyncing,
     preview: renderPreview,
     generating: renderGenerating,
     results: renderResults,
@@ -397,23 +425,46 @@ function renderPaste() {
     wrap.appendChild(h('div', { className: 'error-box' }, state.error));
   }
 
-  wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: () => {
+  wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: async () => {
     const text = document.getElementById('export-text').value;
     if (!text.trim()) { state.error = 'Please paste the export data'; render(); return; }
 
     const invoices = parseExport(text);
     if (invoices.length === 0) { state.error = 'Could not parse any invoices from this text'; render(); return; }
 
-    // Hydrate each invoice with recipient data from the local book.
-    invoices.forEach(inv => {
-      inv.recipient = loadRecipient(inv.name);
-      inv.include = recipientIsReady(inv.recipient);
-      inv._open = !recipientIsReady(inv.recipient); // auto-expand fields when incomplete
-    });
-
     state.exportText = text;
     state.invoices = invoices;
     state.error = null;
+    state.syncDiagnostics = null;
+    state.syncWarning = null;
+    state.step = 'syncing';
+    render();
+
+    // Pull recipient data from the intake spreadsheet.
+    const parentNames = invoices.map(i => i.name);
+    let lookup = null;
+    try {
+      const resp = await api({ action: 'lookupRecipients', parentNames });
+      if (resp && resp.recipients) {
+        lookup = resp.recipients;
+        state.syncDiagnostics = resp.diagnostics || null;
+      } else {
+        state.syncWarning = 'Sheet lookup failed: ' + (resp?.error || 'unknown error') + '. Falling back to saved recipients — you may need to fill in some details manually.';
+      }
+    } catch (e) {
+      state.syncWarning = 'Sheet lookup error: ' + e.message + '. Falling back to saved recipients.';
+    }
+
+    // Merge sheet data into each invoice; fall back to cache-only for misses.
+    invoices.forEach(inv => {
+      const fromSheet = lookup ? lookup[inv.name] : null;
+      inv.recipient = mergeSheetIntoLocal(inv.name, fromSheet);
+      // Persist merged recipient so next run (even without network) has it.
+      saveRecipient(inv.name, inv.recipient);
+      inv.include = recipientIsReady(inv.recipient);
+      inv._open = !recipientIsReady(inv.recipient);
+    });
+
     state.step = 'preview';
     render();
   }}, 'Parse & review'));
@@ -423,11 +474,30 @@ function renderPaste() {
   return wrap;
 }
 
+// ─── Syncing ─────────────────────────────────────────────────────────────────
+
+function renderSyncing() {
+  const wrap = h('div');
+  wrap.appendChild(renderSteps('paste'));
+  wrap.appendChild(h('div', { className: 'loading' },
+    h('span', { className: 'spinner' }),
+    'Pulling parent data from the Facturas sheet…'
+  ));
+  wrap.appendChild(h('div', {
+    style: { textAlign: 'center', fontSize: '12px', color: 'var(--muted)', marginTop: '8px' }
+  }, 'First time may take a few seconds (Apps Script cold start).'));
+  return wrap;
+}
+
 // ─── Preview ─────────────────────────────────────────────────────────────────
 
 function renderPreview() {
   const wrap = h('div');
   wrap.appendChild(renderSteps('preview'));
+
+  if (state.syncWarning) {
+    wrap.appendChild(h('div', { className: 'error-box' }, state.syncWarning));
+  }
 
   const ready = state.invoices.filter(i => recipientIsReady(i.recipient));
   const missing = state.invoices.filter(i => !recipientIsReady(i.recipient));
@@ -441,6 +511,17 @@ function renderPreview() {
       '<strong style="color:var(--danger)">' + missing.length + '</strong> incomplete'
     })
   ));
+
+  if (state.syncDiagnostics) {
+    const d = state.syncDiagnostics;
+    wrap.appendChild(h('div', {
+      style: { fontSize: '12px', color: 'var(--muted)', textAlign: 'center', marginBottom: '10px', lineHeight: '1.5' }
+    },
+      'Intake sheet: ' + d.matched + '/' + (d.matched + d.unmatched.length) + ' parents matched · ' +
+      d.uniqueParents + ' unique parents in sheet'
+      + (d.unmatched.length ? ' · unmatched: ' + d.unmatched.join(', ') : '')
+    ));
+  }
 
   state.invoices.forEach(inv => wrap.appendChild(renderInvoiceCard(inv)));
 
@@ -475,6 +556,19 @@ function renderInvoiceCard(inv) {
     h('span', { className: 'invoice-name' }, inv.name),
     h('span', { className: 'invoice-total' }, '€' + inv.total.toFixed(2))
   ));
+
+  // Source indicator — is this parent in the intake sheet, or are we
+  // relying on cached / manually-entered data?
+  const sourceLabel = inv.recipient._matched
+    ? '📄 From intake sheet'
+    : '⚠ Not in sheet — please fill manually';
+  card.appendChild(h('div', {
+    style: {
+      fontSize: '11px', fontWeight: '600',
+      color: inv.recipient._matched ? 'var(--success)' : 'var(--danger)',
+      marginBottom: '4px'
+    }
+  }, sourceLabel));
 
   const missing = missingRecipientFields(inv.recipient);
   card.appendChild(h('div', {
