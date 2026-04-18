@@ -1,5 +1,6 @@
 /**
  * Invoice Generator — Google Apps Script API
+ * Version: v2026-04-18 14:40 UTC (adds authorizeAll helper for Drive/Sheets scope)
  *
  * Proxies Mollie API calls and reads the "Facturas" intake spreadsheet for
  * parent/student data. Paste into a NEW Google Apps Script project (or add
@@ -33,6 +34,37 @@ var COL_PARENT_EMAIL = "Parent/Guardian's Email";
 var COL_COUNTRY      = 'Country Of Residence';
 var COL_ADDRESS      = 'Address (including city/town)';
 var COL_POSTCODE     = 'Postcode';
+
+// ─── One-time authorization helpers ──────────────────────────────────────────
+//
+// Apps Script only grants scopes (like Sheets read) after the script owner
+// approves them in an interactive prompt. Deploying code that USES a scope
+// doesn't grant the scope — you have to run any function that touches that
+// scope from the editor UI first, which triggers the OAuth consent flow.
+//
+// To unblock the web app after pasting this file:
+//   1. Open the Apps Script editor.
+//   2. Pick `authorizeAll` from the function dropdown next to the Run button.
+//   3. Click Run. Google will prompt: "Authorization required" → Review
+//      permissions → pick your account → "Allow" on Drive/Sheets scope.
+//   4. Done — the web app now has permission. No need to redeploy.
+
+function authorizeAll() {
+  // Touches both scopes the web app needs: SpreadsheetApp (Sheets) and
+  // UrlFetchApp (external HTTPS). Returns a short status string so you see
+  // something in the editor's execution log.
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = findSheetByGid(ss, PARENTS_TAB_GID);
+  var tabName = sheet ? sheet.getName() : '(no tab with that gid)';
+  // Dry-run a UrlFetch to api.mollie.com (no auth, expect 401 — we just want
+  // the scope consent triggered).
+  try {
+    UrlFetchApp.fetch('https://api.mollie.com/v2/sales-invoices', {
+      muteHttpExceptions: true, method: 'get'
+    });
+  } catch (e) { /* ignore */ }
+  return 'OK — sheet title: "' + ss.getName() + '", tab: "' + tabName + '"';
+}
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
