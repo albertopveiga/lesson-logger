@@ -48,19 +48,30 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 .invoice-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .invoice-name { font-size: 15px; font-weight: 700; }
 .invoice-total { font-size: 15px; font-weight: 700; color: var(--accent); }
-.invoice-match { font-size: 11px; margin-top: 2px; }
-.invoice-match.found { color: var(--success); }
-.invoice-match.missing { color: var(--danger); }
-.invoice-lines { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.invoice-lines { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 .invoice-status { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .invoice-status.pending { background: var(--warm); color: var(--muted); }
 .invoice-status.created { background: var(--success-lt); color: var(--success); }
 .invoice-status.error { background: var(--danger-lt); color: var(--danger); }
-.invoice-status.skipped { background: var(--warm); color: var(--muted); }
 
-.invoice-toggle { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.invoice-toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .toggle-btn { padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); font-size: 11px; font-weight: 600; color: var(--muted); }
 .toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toggle-btn:disabled { opacity: 0.4; cursor: default; }
+
+.recipient-fields { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.recipient-fields summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); list-style: none; padding: 4px 0; user-select: none; }
+.recipient-fields summary::-webkit-details-marker { display: none; }
+.recipient-fields summary::before { content: '▸ '; display: inline-block; transition: transform 0.15s; }
+.recipient-fields[open] summary::before { transform: rotate(90deg); }
+.recipient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.recipient-grid .full { grid-column: 1 / -1; }
+.recipient-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; background: var(--bg); outline: none; }
+.recipient-input:focus { border-color: var(--accent); }
+.recipient-input.missing { border-color: var(--danger); background: var(--danger-lt); }
+.recipient-status { font-size: 11px; font-weight: 600; margin-top: 6px; }
+.recipient-status.ready { color: var(--success); }
+.recipient-status.missing { color: var(--danger); }
 
 .divider { border-top: 1px solid var(--border); margin: 18px 0; }
 
@@ -87,8 +98,7 @@ let state = {
   apiUrl: localStorage.getItem('ig_api_url') || '',
   mollieKey: localStorage.getItem('ig_mollie_key') || '',
   exportText: '',
-  invoices: [],       // parsed from export
-  mollieCustomers: [], // fetched from Mollie
+  invoices: [],       // parsed from export, enriched with recipient data
   results: [],        // creation results
   error: null,
 };
@@ -115,11 +125,11 @@ async function api(body) {
 function parseExport(text) {
   const invoices = [];
   let currentParent = null;
-  
+
   const lines = text.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
-    
+
     // Parent line: "▸ Parent Name"
     if (trimmed.startsWith('▸')) {
       const name = trimmed.substring(1).trim();
@@ -127,7 +137,7 @@ function parseExport(text) {
       invoices.push(currentParent);
       continue;
     }
-    
+
     // Lesson line: "  2026-04-14 18:35  Student  Type  1h × €50 = €50.00"
     if (currentParent && trimmed.match(/^\d{4}-\d{2}-\d{2}/)) {
       const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})?\s+(.+?)\s+(Ind · Pres|Ind · Online|Group · Pres|Group · Online)\s+(\d+\.?\d*)\s*h\s*×\s*€\s*(\d+\.?\d*)\s*=\s*€\s*(\d+\.?\d*)/);
@@ -140,155 +150,92 @@ function parseExport(text) {
           duration: parseFloat(match[5]),
           pricePerHour: parseFloat(match[6]),
           total: parseFloat(match[7]),
-          // For Mollie API
           description: match[3].trim() + ' — ' + match[4] + ' — ' + match[1] + (match[2] ? ' ' + match[2] : '') + ' — ' + match[5] + 'h',
           quantity: 1,
           unitPrice: parseFloat(match[7]),
         });
         currentParent.total += parseFloat(match[7]);
       }
-      continue;
     }
-    
-    // Invoice total line: "  INVOICE TOTAL: €123.45"
-    // (we already calculated total from lines, skip)
   }
-  
+
   return invoices;
 }
 
-// ─── Name matching ───────────────────────────────────────────────────────────
+// ─── Recipient book ──────────────────────────────────────────────────────────
+// Mollie's sales-invoices endpoint needs the recipient data inline every time.
+// We cache what she enters once per parent so next month's run auto-populates.
+// Key: normalized parent name. Value: { email, givenName, familyName, street
+// AndNumber, postalCode, city, country, locale }.
 
 function normalize(name) {
   return String(name || '').toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
-    .replace(/[^a-z0-9\s]/g, '') // remove special chars
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
     .replace(/\s+/g, ' ').trim();
 }
 
-// Dutch tussenvoegsels — "van", "de", "van der", etc. — appear in most Dutch
-// surnames and break naive matching because the lesson-logger entry and the
-// Mollie customer record rarely agree on whether they're included.
-const TUSSENVOEGSELS = new Set([
-  'van', 'der', 'den', 'de', 'het', 'te', 'ter', 'ten',
-  'op', 'in', 'aan', 'over', 'uit', 'bij', 'of',
-  'vande', 'vander', 'vanden'
-]);
-
-// Prefixes the parent name might start with in the logger ("Familie Jansen")
-// that won't appear in Mollie. Also strip lone single-letter initials like "J".
-const PREFIX_NOISE = new Set(['familie', 'fam', 'family', 'gezin', 'mr', 'mrs', 'dhr', 'mw', 'mevr']);
-
-function nameTokens(name) {
-  return normalize(name).split(' ').filter(w => w.length > 0);
+function slugify(name) {
+  const n = normalize(name).replace(/\s+/g, '-');
+  return n ? 'parent-' + n : 'parent-unknown';
 }
 
-// Strip particles, single-letter initials, and noise prefixes. What remains
-// should be the "real" name tokens (first name + surname).
-function coreTokens(name) {
-  return nameTokens(name).filter(t =>
-    !TUSSENVOEGSELS.has(t) && !PREFIX_NOISE.has(t) && t.length > 1
-  );
+// Naive but good enough: last whitespace-separated token is the family name,
+// the rest is the given name. She can edit both in the form if wrong.
+function splitName(full) {
+  const parts = String(full || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { givenName: '', familyName: '' };
+  if (parts.length === 1) return { givenName: parts[0], familyName: '' };
+  return {
+    givenName: parts.slice(0, -1).join(' '),
+    familyName: parts[parts.length - 1]
+  };
 }
 
-function lastCoreToken(name) {
-  const core = coreTokens(name);
-  return core[core.length - 1] || '';
-}
-
-function firstCoreToken(name) {
-  const core = coreTokens(name);
-  return core[0] || '';
-}
-
-function findMollieCustomer(parentName, customers) {
-  const normParent = normalize(parentName);
-  const coreP = coreTokens(parentName);
-  const lastP = lastCoreToken(parentName);
-  const firstP = firstCoreToken(parentName);
-
-  // 1. Exact normalized match
-  let match = customers.find(c => normalize(c.name) === normParent);
-  if (match) return { customer: match, confidence: 'exact' };
-
-  // 2. Same core tokens in any order (particles and "Familie" stripped from both sides)
-  match = customers.find(c => {
-    const coreC = coreTokens(c.name);
-    if (coreC.length === 0 || coreC.length !== coreP.length) return false;
-    return [...coreC].sort().join(' ') === [...coreP].sort().join(' ');
-  });
-  if (match) return { customer: match, confidence: 'high' };
-
-  // 3. All parent core tokens present in customer (handles Mollie having extra middle names)
-  if (coreP.length > 0) {
-    match = customers.find(c => {
-      const coreC = coreTokens(c.name);
-      return coreP.every(w => coreC.includes(w));
-    });
-    if (match) return { customer: match, confidence: 'high' };
-  }
-
-  // 4. All customer core tokens present in parent (handles logger having extra words)
-  match = customers.find(c => {
-    const coreC = coreTokens(c.name);
-    return coreC.length >= 1 && coreC.every(w => coreP.includes(w));
-  });
-  if (match) return { customer: match, confidence: 'medium' };
-
-  // 5. Last-name (after particle strip) match, with initial disambiguation
-  if (lastP.length >= 3) {
-    const sameLast = customers.filter(c => lastCoreToken(c.name) === lastP);
-    if (sameLast.length === 1) return { customer: sameLast[0], confidence: 'medium' };
-    if (sameLast.length > 1 && firstP) {
-      // Match by first-name initial — handles "Jan de Vries" vs "J. de Vries"
-      const byInitial = sameLast.find(c => {
-        const fc = firstCoreToken(c.name);
-        return fc && (fc === firstP || fc[0] === firstP[0]);
-      });
-      if (byInitial) return { customer: byInitial, confidence: 'low' };
-    }
-  }
-
-  // 6. Last-name substring fallback — catches minor spelling drift
-  if (lastP.length >= 4) {
-    match = customers.find(c => {
-      const lc = lastCoreToken(c.name);
-      return lc.length >= 4 && (lc.includes(lastP) || lastP.includes(lc));
-    });
-    if (match) return { customer: match, confidence: 'low' };
-  }
-
-  return null;
-}
-
-// ─── Match cache ─────────────────────────────────────────────────────────────
-// Persist every confirmed mapping (auto-matched or manually picked) so next
-// month's run resolves the same parents without any manual work.
-
-function getNameCache() {
-  try { return JSON.parse(localStorage.getItem('ig_name_cache') || '{}'); }
+function getRecipientBook() {
+  try { return JSON.parse(localStorage.getItem('ig_recipients') || '{}'); }
   catch { return {}; }
 }
 
-function saveNameCache(cache) {
-  try { localStorage.setItem('ig_name_cache', JSON.stringify(cache)); } catch {}
+function saveRecipientBook(book) {
+  try { localStorage.setItem('ig_recipients', JSON.stringify(book)); } catch {}
 }
 
-function cacheKey(parentName) {
-  return normalize(parentName);
+function loadRecipient(parentName) {
+  const book = getRecipientBook();
+  const cached = book[normalize(parentName)];
+  if (cached) return Object.assign({}, cached);
+  // First time we've seen this parent — seed from the name.
+  const split = splitName(parentName);
+  return {
+    email: '',
+    givenName: split.givenName,
+    familyName: split.familyName,
+    streetAndNumber: '',
+    postalCode: '',
+    city: '',
+    country: 'NL',
+    locale: 'nl_NL',
+  };
 }
 
-function rememberMatch(parentName, customer) {
-  if (!customer || !customer.id) return;
-  const cache = getNameCache();
-  cache[cacheKey(parentName)] = { id: customer.id, name: customer.name || '' };
-  saveNameCache(cache);
+function saveRecipient(parentName, recipient) {
+  const book = getRecipientBook();
+  book[normalize(parentName)] = Object.assign({}, recipient);
+  saveRecipientBook(book);
 }
 
-function forgetMatch(parentName) {
-  const cache = getNameCache();
-  delete cache[cacheKey(parentName)];
-  saveNameCache(cache);
+function forgetRecipient(parentName) {
+  const book = getRecipientBook();
+  delete book[normalize(parentName)];
+  saveRecipientBook(book);
+}
+
+// Minimum required data to send to Mollie. Email alone is the hard floor; the
+// others are recommended but Mollie may create a draft without them (she can
+// fill in missing fields in the Mollie UI before sending).
+function recipientIsReady(r) {
+  return !!(r && r.email && r.email.includes('@'));
 }
 
 // ─── Render ──────────────────────────────────────────────────────────────────
@@ -310,10 +257,12 @@ function render() {
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
     if (k.startsWith('on')) el[k] = v;
     else if (k === 'className') el.className = v;
     else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
     else if (k === 'innerHTML') el.innerHTML = v;
+    else if (v === true) el.setAttribute(k, '');
     else el.setAttribute(k, v);
   }
   for (const c of children.flat()) {
@@ -364,25 +313,24 @@ function renderSettings() {
     render();
   }}, 'Continue'));
 
-  // Match cache status — show how many parent→customer mappings are stored
-  // and offer an escape hatch if something ever gets cached incorrectly.
-  const cache = getNameCache();
-  const cacheCount = Object.keys(cache).length;
-  if (cacheCount > 0) {
+  // Recipient book status + escape hatch.
+  const book = getRecipientBook();
+  const bookCount = Object.keys(book).length;
+  if (bookCount > 0) {
     wrap.appendChild(h('div', {
       style: { marginTop: '18px', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }
-    }, cacheCount + ' remembered customer match' + (cacheCount !== 1 ? 'es' : '')));
+    }, bookCount + ' saved recipient' + (bookCount !== 1 ? 's' : '')));
 
     wrap.appendChild(h('button', {
       className: 'btn-secondary',
       style: { marginTop: '8px' },
       onclick: () => {
-        if (confirm('Forget all ' + cacheCount + ' remembered matches? Next time you\'ll need to re-match any parents the auto-matcher gets wrong.')) {
-          localStorage.removeItem('ig_name_cache');
+        if (confirm('Forget all ' + bookCount + ' saved recipient addresses? You\'ll need to re-enter email and address for every parent next time.')) {
+          localStorage.removeItem('ig_recipients');
           render();
         }
       }
-    }, 'Clear remembered matches'));
+    }, 'Clear saved recipients'));
   }
 
   return wrap;
@@ -407,126 +355,30 @@ function renderPaste() {
     wrap.appendChild(h('div', { className: 'error-box' }, state.error));
   }
 
-  wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: async () => {
+  wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: () => {
     const text = document.getElementById('export-text').value;
     if (!text.trim()) { state.error = 'Please paste the export data'; render(); return; }
-    
+
     const invoices = parseExport(text);
     if (invoices.length === 0) { state.error = 'Could not parse any invoices from this text'; render(); return; }
-    
+
+    // Hydrate each invoice with recipient data from the local book.
+    invoices.forEach(inv => {
+      inv.recipient = loadRecipient(inv.name);
+      inv.include = recipientIsReady(inv.recipient);
+      inv._open = !recipientIsReady(inv.recipient); // auto-expand fields when incomplete
+    });
+
     state.exportText = text;
     state.invoices = invoices;
     state.error = null;
-    
-    // Fetch Mollie customers for matching
-    const btn = document.querySelector('.btn-primary');
-    btn.textContent = 'Fetching customers from Mollie...';
-    btn.disabled = true;
-    
-    const result = await api({ action: 'listCustomers', apiKey: state.mollieKey });
-    if (result?.success) {
-      state.mollieCustomers = result.customers;
-      console.log('Fetched ' + result.customers.length + ' Mollie customers');
-      console.log('First 5:', result.customers.slice(0, 5).map(c => c.name));
-      console.log('Looking for:', state.invoices.map(i => i.name));
-      
-      // Match each invoice to a customer. Cache takes priority — once a
-      // parent has been matched (manually or auto) the mapping sticks so
-      // next month's export resolves without manual work.
-      const cache = getNameCache();
-      state.invoices.forEach(inv => {
-        const cached = cache[cacheKey(inv.name)];
-        if (cached) {
-          const cust = state.mollieCustomers.find(c => c.id === cached.id);
-          if (cust) {
-            inv.mollieCustomer = cust;
-            inv.matchConfidence = 'remembered';
-            inv.include = true;
-            return;
-          }
-          // Cached customer no longer exists in Mollie — fall through to heuristic.
-        }
-        const match = findMollieCustomer(inv.name, state.mollieCustomers);
-        if (match) {
-          inv.mollieCustomer = match.customer;
-          inv.matchConfidence = match.confidence;
-          inv.include = true;
-          // Remember high-confidence auto-matches so she doesn't have to
-          // re-approve them. Medium/low stay unremembered and will be
-          // re-evaluated next month (or corrected via manual pick).
-          if (match.confidence === 'exact' || match.confidence === 'high') {
-            rememberMatch(inv.name, match.customer);
-          }
-        } else {
-          inv.mollieCustomer = null;
-          inv.matchConfidence = null;
-          inv.include = false;
-        }
-      });
-      
-      state.step = 'preview';
-    } else {
-      state.error = result?.error || 'Failed to fetch customers';
-    }
+    state.step = 'preview';
     render();
-  }}, 'Parse & match customers'));
+  }}, 'Parse & review'));
 
   wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'settings'; render(); } }, '← Settings'));
 
   return wrap;
-}
-
-// ─── Customer picker ─────────────────────────────────────────────────────────
-// A plain <select> over every Mollie customer. Used when auto-match failed
-// OR when the user clicks "Change" on a matched card. Picking a customer
-// writes to the cache so the same name resolves automatically next month.
-
-function renderCustomerPicker(inv) {
-  const sorted = [...state.mollieCustomers].sort((a, b) =>
-    (a.name || '').localeCompare(b.name || '', 'nl')
-  );
-
-  const select = h('select', {
-    className: 'form-input',
-    style: { marginTop: '8px', marginBottom: '6px', fontSize: '13px' },
-    onchange: (e) => {
-      const cid = e.target.value;
-      if (!cid) {
-        // Blank option = unlink. Forget the cached mapping so we don't
-        // auto-restore it next time.
-        inv.mollieCustomer = null;
-        inv.matchConfidence = null;
-        inv.include = false;
-        inv._picking = false;
-        forgetMatch(inv.name);
-        render();
-        return;
-      }
-      const cust = state.mollieCustomers.find(c => c.id === cid);
-      if (cust) {
-        inv.mollieCustomer = cust;
-        inv.matchConfidence = 'manual';
-        inv.include = true;
-        inv._picking = false;
-        rememberMatch(inv.name, cust);
-        render();
-      }
-    }
-  });
-
-  const placeholder = inv.mollieCustomer
-    ? '— unlink and pick again —'
-    : '— pick a Mollie customer —';
-  select.appendChild(h('option', { value: '' }, placeholder));
-
-  sorted.forEach(c => {
-    const label = (c.name || '(no name)') + (c.email ? ' · ' + c.email : '');
-    const opt = h('option', { value: c.id }, label);
-    if (inv.mollieCustomer && inv.mollieCustomer.id === c.id) opt.selected = true;
-    select.appendChild(opt);
-  });
-
-  return select;
 }
 
 // ─── Preview ─────────────────────────────────────────────────────────────────
@@ -535,87 +387,21 @@ function renderPreview() {
   const wrap = h('div');
   wrap.appendChild(renderSteps('preview'));
 
-  const matched = state.invoices.filter(i => i.mollieCustomer);
-  const unmatched = state.invoices.filter(i => !i.mollieCustomer);
-  const toGenerate = state.invoices.filter(i => i.include);
+  const ready = state.invoices.filter(i => recipientIsReady(i.recipient));
+  const missing = state.invoices.filter(i => !recipientIsReady(i.recipient));
+  const toGenerate = state.invoices.filter(i => i.include && recipientIsReady(i.recipient));
   const grandTotal = toGenerate.reduce((s, i) => s + i.total, 0);
 
-  // Summary
   wrap.appendChild(h('div', { className: 'info-box' },
     h('p', { className: 'info-text', innerHTML:
       '<strong>' + state.invoices.length + '</strong> invoices parsed · ' +
-      '<strong style="color:var(--success)">' + matched.length + '</strong> matched · ' +
-      '<strong style="color:var(--danger)">' + unmatched.length + '</strong> unmatched'
+      '<strong style="color:var(--success)">' + ready.length + '</strong> ready · ' +
+      '<strong style="color:var(--danger)">' + missing.length + '</strong> missing email'
     })
   ));
 
-  // Invoice cards
-  const CONF_LABEL = {
-    exact: '', high: ' (high match)', medium: ' (medium match)', low: ' (low match)',
-    remembered: ' (remembered)', manual: ' (manually picked)'
-  };
+  state.invoices.forEach(inv => wrap.appendChild(renderInvoiceCard(inv)));
 
-  state.invoices.forEach((inv, idx) => {
-    const card = h('div', { className: 'invoice-card' });
-
-    // Header
-    card.appendChild(h('div', { className: 'invoice-header' },
-      h('span', { className: 'invoice-name' }, inv.name),
-      h('span', { className: 'invoice-total' }, '€' + inv.total.toFixed(2))
-    ));
-
-    // Match status + inline "Change" link for matched invoices
-    if (inv.mollieCustomer) {
-      const conf = CONF_LABEL[inv.matchConfidence] || '';
-      card.appendChild(h('div', {
-        className: 'invoice-match found',
-        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }
-      },
-        h('span', { style: { flex: '1', minWidth: '0' } },
-          '✓ ' + inv.mollieCustomer.name + conf + (inv.mollieCustomer.email ? ' · ' + inv.mollieCustomer.email : '')
-        ),
-        h('button', {
-          style: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11px', fontWeight: '600', textDecoration: 'underline', padding: '0', cursor: 'pointer' },
-          onclick: () => { inv._picking = !inv._picking; render(); }
-        }, inv._picking ? 'Hide picker' : 'Change')
-      ));
-    } else {
-      card.appendChild(h('div', { className: 'invoice-match missing' },
-        '✗ No auto-match — pick a Mollie customer below'
-      ));
-    }
-
-    // Customer picker — shown when unmatched, or when user clicked "Change"
-    if (!inv.mollieCustomer || inv._picking) {
-      card.appendChild(renderCustomerPicker(inv));
-    }
-
-    // Lines
-    const linesText = inv.lines.map(l => l.student + ' · ' + l.type + ' · ' + l.duration + 'h × €' + l.pricePerHour).join('\n');
-    card.appendChild(h('div', { className: 'invoice-lines' }, linesText));
-
-    // Include / Skip toggle — Include disabled when nothing is matched
-    const toggle = h('div', { className: 'invoice-toggle' });
-    const inclBtn = h('button', {
-      className: 'toggle-btn' + (inv.include ? ' active' : ''),
-      onclick: () => {
-        if (!inv.mollieCustomer) return;
-        inv.include = true; render();
-      }
-    }, 'Include');
-    if (!inv.mollieCustomer) inclBtn.setAttribute('disabled', 'disabled');
-    const skipBtn = h('button', {
-      className: 'toggle-btn' + (!inv.include ? ' active' : ''),
-      onclick: () => { inv.include = false; render(); }
-    }, 'Skip');
-    toggle.appendChild(inclBtn);
-    toggle.appendChild(skipBtn);
-    card.appendChild(toggle);
-
-    wrap.appendChild(card);
-  });
-
-  // Summary
   wrap.appendChild(h('div', { className: 'divider' }));
   wrap.appendChild(h('div', { className: 'summary-row' },
     h('span', {}, 'Invoices to generate'),
@@ -626,33 +412,138 @@ function renderPreview() {
     h('span', {}, '€' + grandTotal.toFixed(2))
   ));
 
-  // Buttons
-  const canGenerate = toGenerate.length > 0 && toGenerate.every(i => i.mollieCustomer);
-  
+  const canGenerate = toGenerate.length > 0;
   wrap.appendChild(h('button', {
     className: 'btn-primary',
     style: { marginTop: '18px', marginBottom: '10px' },
-    disabled: !canGenerate ? 'disabled' : undefined,
+    disabled: !canGenerate,
     onclick: () => generateInvoices()
-  }, canGenerate ? 'Create ' + toGenerate.length + ' draft invoice' + (toGenerate.length !== 1 ? 's' : '') + ' in Mollie' : 'Fix unmatched customers to continue'));
+  }, canGenerate ? 'Create ' + toGenerate.length + ' draft invoice' + (toGenerate.length !== 1 ? 's' : '') + ' in Mollie' : 'Add email for each parent to continue'));
 
   wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'paste'; state.error = null; render(); } }, '← Back to paste'));
 
   return wrap;
 }
 
+function renderInvoiceCard(inv) {
+  const ready = recipientIsReady(inv.recipient);
+  const card = h('div', { className: 'invoice-card' });
+
+  card.appendChild(h('div', { className: 'invoice-header' },
+    h('span', { className: 'invoice-name' }, inv.name),
+    h('span', { className: 'invoice-total' }, '€' + inv.total.toFixed(2))
+  ));
+
+  card.appendChild(h('div', {
+    className: 'recipient-status ' + (ready ? 'ready' : 'missing')
+  }, ready
+    ? '✓ ' + inv.recipient.email
+    : '✗ Email required before this invoice can be sent'
+  ));
+
+  // Lesson line summary
+  const linesText = inv.lines.map(l => l.student + ' · ' + l.type + ' · ' + l.duration + 'h × €' + l.pricePerHour).join('\n');
+  card.appendChild(h('div', { className: 'invoice-lines' }, linesText));
+
+  // Recipient fields — <details>/<summary> native disclosure so mobile keyboards
+  // and scroll position don't fight the re-render when typing.
+  const details = h('details', { className: 'recipient-fields' });
+  if (inv._open) details.setAttribute('open', '');
+  details.addEventListener('toggle', () => {
+    inv._open = details.open;
+  });
+
+  details.appendChild(h('summary', {}, ready ? 'Edit recipient details' : 'Recipient details — tap to fill'));
+
+  const grid = h('div', { className: 'recipient-grid' });
+
+  const fieldInput = (key, placeholder, opts = {}) => {
+    const input = h('input', {
+      className: 'recipient-input' + (opts.required && !String(inv.recipient[key] || '').trim() ? ' missing' : ''),
+      type: opts.type || 'text',
+      value: inv.recipient[key] || '',
+      placeholder,
+      inputmode: opts.inputmode,
+      autocapitalize: opts.autocapitalize,
+      spellcheck: 'false',
+    });
+    input.addEventListener('input', (e) => {
+      inv.recipient[key] = e.target.value;
+      // Persist on every keystroke — cheap and resilient.
+      saveRecipient(inv.name, inv.recipient);
+      // Don't re-render; let the keyboard stay open.
+    });
+    input.addEventListener('blur', () => {
+      // One render on blur so the "ready" badge updates without disrupting input.
+      render();
+    });
+    return input;
+  };
+
+  grid.appendChild(wrapField('Email *', fieldInput('email', 'parent@example.com', { type: 'email', inputmode: 'email', autocapitalize: 'off', required: true }), true));
+  grid.appendChild(wrapField('Given name', fieldInput('givenName', 'Given')));
+  grid.appendChild(wrapField('Family name', fieldInput('familyName', 'Family')));
+  grid.appendChild(wrapField('Street + nr', fieldInput('streetAndNumber', 'Main St 12'), true));
+  grid.appendChild(wrapField('Postcode', fieldInput('postalCode', '1011 AB')));
+  grid.appendChild(wrapField('City', fieldInput('city', 'Amsterdam')));
+  grid.appendChild(wrapField('Country', fieldInput('country', 'NL', { autocapitalize: 'characters' })));
+
+  details.appendChild(grid);
+
+  // Forget this parent's saved data (resets form to blank next time they appear)
+  details.appendChild(h('button', {
+    className: 'btn-secondary',
+    style: { marginTop: '10px', fontSize: '11px' },
+    onclick: (e) => {
+      e.preventDefault();
+      if (confirm('Forget saved details for ' + inv.name + '?')) {
+        forgetRecipient(inv.name);
+        inv.recipient = loadRecipient(inv.name);
+        inv.include = false;
+        render();
+      }
+    }
+  }, 'Forget this recipient'));
+
+  card.appendChild(details);
+
+  // Include / Skip toggle
+  const toggle = h('div', { className: 'invoice-toggle' });
+  const inclBtn = h('button', {
+    className: 'toggle-btn' + (inv.include && ready ? ' active' : ''),
+    disabled: !ready,
+    onclick: () => { if (ready) { inv.include = true; render(); } }
+  }, 'Include');
+  const skipBtn = h('button', {
+    className: 'toggle-btn' + (!inv.include ? ' active' : ''),
+    onclick: () => { inv.include = false; render(); }
+  }, 'Skip');
+  toggle.appendChild(inclBtn);
+  toggle.appendChild(skipBtn);
+  card.appendChild(toggle);
+
+  return card;
+}
+
+function wrapField(label, input, full) {
+  const wrap = h('div', { className: full ? 'full' : '' });
+  wrap.appendChild(h('label', { style: { fontSize: '11px', fontWeight: '600', color: 'var(--muted)', display: 'block', marginBottom: '3px' } }, label));
+  wrap.appendChild(input);
+  return wrap;
+}
+
 // ─── Generate ────────────────────────────────────────────────────────────────
 
 async function generateInvoices() {
-  const toGenerate = state.invoices.filter(i => i.include && i.mollieCustomer);
+  const toGenerate = state.invoices.filter(i => i.include && recipientIsReady(i.recipient));
   state.step = 'generating';
   state.results = [];
   render();
-  
+
   const mollieInvoices = toGenerate.map(inv => ({
-    customerId: inv.mollieCustomer.id,
+    recipientIdentifier: slugify(inv.name),
     customerName: inv.name,
-    customerEmail: inv.mollieCustomer.email || '',
+    recipient: Object.assign({ type: 'consumer', locale: 'nl_NL' }, inv.recipient),
     lines: inv.lines.map(l => ({
       description: l.description,
       quantity: 1,
@@ -660,8 +551,8 @@ async function generateInvoices() {
     })),
     memo: 'Generated from Lesson Logger',
   }));
-  
-  // Send in small batches to avoid timeout
+
+  // Send in small batches to avoid Apps Script timeout.
   const BATCH = 5;
   for (let i = 0; i < mollieInvoices.length; i += BATCH) {
     const batch = mollieInvoices.slice(i, i + BATCH);
@@ -670,33 +561,32 @@ async function generateInvoices() {
       apiKey: state.mollieKey,
       invoices: batch,
     });
-    
+
     if (result?.success && result.results) {
       state.results.push(...result.results);
     } else {
-      // Mark remaining as failed
       batch.forEach(inv => {
         state.results.push({ customerName: inv.customerName, result: { error: result?.error || 'Batch failed' } });
       });
     }
     render();
   }
-  
+
   state.step = 'results';
   render();
 }
 
 function renderGenerating() {
-  const toGenerate = state.invoices.filter(i => i.include && i.mollieCustomer);
+  const toGenerate = state.invoices.filter(i => i.include && recipientIsReady(i.recipient));
   const done = state.results.length;
   const total = toGenerate.length;
-  
+
   const wrap = h('div');
   wrap.appendChild(h('div', { className: 'loading' },
     h('span', { className: 'spinner' }),
     'Creating invoices... ' + done + '/' + total
   ));
-  
+
   if (state.results.length > 0) {
     const list = h('div', { className: 'results-list' });
     state.results.forEach(r => {
@@ -706,12 +596,12 @@ function renderGenerating() {
           h('span', { className: 'invoice-name' }, r.customerName),
           h('span', { className: 'invoice-status ' + (ok ? 'created' : 'error') }, ok ? '✓ Created' : '✗ Error')
         ),
-        ok ? null : h('div', { className: 'invoice-match missing' }, r.result?.error || 'Unknown error')
+        ok ? null : h('div', { className: 'recipient-status missing' }, r.result?.error || 'Unknown error')
       ));
     });
     wrap.appendChild(list);
   }
-  
+
   return wrap;
 }
 
@@ -745,10 +635,10 @@ function renderResults() {
       )
     );
     if (ok && r.result.invoiceNumber) {
-      card.appendChild(h('div', { className: 'invoice-match found' }, 'Invoice #' + r.result.invoiceNumber));
+      card.appendChild(h('div', { className: 'recipient-status ready' }, 'Invoice #' + r.result.invoiceNumber));
     }
     if (!ok) {
-      card.appendChild(h('div', { className: 'invoice-match missing' }, r.result?.error || 'Unknown error'));
+      card.appendChild(h('div', { className: 'recipient-status missing' }, r.result?.error || 'Unknown error'));
     }
     wrap.appendChild(card);
   });
