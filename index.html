@@ -215,37 +215,29 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 .agenda-block {
   position: absolute; left: 6px; right: 6px;
   background: var(--accent); color: #fff; border-radius: 10px;
-  padding: 6px 10px; overflow: hidden; pointer-events: auto; cursor: pointer;
+  padding: 6px 10px 6px 12px; overflow: hidden; pointer-events: auto;
   box-shadow: 0 1px 3px rgba(27,67,50,0.15);
-  display: flex; flex-direction: column; justify-content: center;
+  display: flex; flex-direction: column; gap: 3px;
+  cursor: default;
 }
-.agenda-block:active { background: var(--accent-dk); }
-.agenda-block-time { font-size: 10px; font-weight: 700; opacity: 0.85; letter-spacing: 0.02em; }
-.agenda-block-name { font-size: 13px; font-weight: 700; line-height: 1.2; margin-top: 1px; }
-.agenda-block-meta { font-size: 11px; opacity: 0.9; margin-top: 1px; }
-.agenda-block-price { font-size: 11px; font-weight: 700; margin-top: auto; align-self: flex-end; }
-.agenda-block.compact { padding: 3px 8px; }
-.agenda-block.compact .agenda-block-name { font-size: 12px; }
-.agenda-block.compact .agenda-block-meta { display: none; }
-.agenda-block.compact .agenda-block-price { display: none; }
-
-/* Group block (multiple students in one time slot) */
-.agenda-block.group { padding: 5px 4px 5px 10px; cursor: default; }
-.agenda-block-header { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; font-weight: 700; opacity: 0.85; letter-spacing: 0.02em; margin-bottom: 2px; padding-right: 6px; }
-.agenda-block-header .agenda-block-count { opacity: 0.75; }
-.agenda-members { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.agenda-block.compact { cursor: pointer; padding: 4px 10px; }
+.agenda-block.compact:active { background: var(--accent-dk); }
+.agenda-block-header { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; font-weight: 700; opacity: 0.85; letter-spacing: 0.02em; }
+.agenda-block-header .agenda-block-count { opacity: 0.8; }
+.agenda-members { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
 .agenda-member {
   display: flex; justify-content: space-between; align-items: center;
   background: rgba(255,255,255,0.14); border: none; color: #fff;
-  font-family: var(--font); padding: 3px 8px 3px 6px; border-radius: 6px;
-  font-size: 12px; font-weight: 600; text-align: left;
+  font-family: var(--font); padding: 4px 8px 4px 8px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
+button.agenda-member { cursor: pointer; }
 .agenda-member:active { background: rgba(255,255,255,0.28); }
 .agenda-member-price { font-size: 11px; font-weight: 700; opacity: 0.9; margin-left: 6px; }
-.agenda-block.group.compact .agenda-members { flex-direction: row; flex-wrap: wrap; gap: 3px; }
-.agenda-block.group.compact .agenda-member { padding: 1px 6px; font-size: 11px; }
-.agenda-block.group.compact .agenda-member-price { display: none; }
+.agenda-block.compact .agenda-members { flex-direction: row; flex-wrap: wrap; gap: 3px; }
+.agenda-block.compact .agenda-member { padding: 1px 7px; font-size: 11px; }
+.agenda-block.compact .agenda-member-price { display: none; }
 
 /* ─── Info / Warning ─── */
 .info-box { background: var(--accent-lt); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid rgba(45,106,79,0.12); }
@@ -307,7 +299,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 
 <div id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 22:30 UTC
+  v2026-04-18 23:00 UTC
 </div>
 
 <script>
@@ -1416,7 +1408,9 @@ function renderReview() {
   // group lessons with several students show every name in a single block.
   const cohorts = buildCohorts(dayLessons, selectedDate);
 
-  // Overlay: absolutely-positioned cohort blocks
+  // Overlay: absolutely-positioned cohort blocks. Single-student and
+  // multi-student lessons share the same layout — a compact header line
+  // (time · type — count · €total) with member pills below.
   const overlay = h('div', { className: 'agenda-blocks', style: { height: gridHeight + 'px' } });
   cohorts.forEach(c => {
     const topPx = ((c.startMin - startH * 60) / 60) * AGENDA_PX_PER_HOUR;
@@ -1426,63 +1420,53 @@ function renderReview() {
     const typeShort = getLessonType(c.lessonType).short;
     const members = c.members;
     const cohortTotal = members.reduce((s, m) => s + Number(m.total || 0), 0);
+    const isSingle = members.length === 1;
+    const durH = Number(members[0].duration);
 
-    if (members.length === 1) {
-      // Single-student block — the classic layout.
-      const m = members[0];
-      const isCompact = heightPx < 52;
-      overlay.appendChild(h('div', {
-        className: 'agenda-block' + (isCompact ? ' compact' : ''),
-        style: { top: topPx + 'px', height: heightPx + 'px' },
-        onclick: () => navigate('editLesson', { _editLesson: m })
-      },
-        h('div', { className: 'agenda-block-time' }, startHm + '–' + endHm),
-        h('div', { className: 'agenda-block-name' }, getStudentName(m.studentId)),
-        h('div', { className: 'agenda-block-meta' }, typeShort + ' · ' + m.duration + 'h'),
-        h('div', { className: 'agenda-block-price' }, '€' + Number(m.total || 0).toFixed(2))
-      ));
-      return;
-    }
-
-    // Multi-student cohort (group lesson or overlap).
-    // If the block is tall enough to list every member (~20px/row + header),
-    // render them as tappable rows; otherwise fall back to a compact summary
-    // that opens the cohort detail view on tap.
-    const estimatedRowed = 24 + members.length * 22;
+    // Fits every member as a full-width tappable row?
+    const estimatedRowed = 22 + members.length * 26;
     const canListAll = heightPx >= estimatedRowed;
     const isCompact = !canListAll;
 
+    // Header: "HH:MM–HH:MM · Type"        "Nh · €X"  (single)
+    //         "HH:MM–HH:MM · Type"        "N · €X"   (group)
+    const rightStr = (isSingle ? durH + 'h' : members.length) + ' · €' + cohortTotal.toFixed(2);
     const header = h('div', { className: 'agenda-block-header' },
       h('span', { className: 'agenda-block-time' }, startHm + '–' + endHm + ' · ' + typeShort),
-      h('span', { className: 'agenda-block-count' }, members.length + ' · €' + cohortTotal.toFixed(2))
+      h('span', { className: 'agenda-block-count' }, rightStr)
     );
 
+    // Compact-block tap target: single → edit lesson directly; multi → cohort
+    // detail view (which then routes to per-student edit).
+    const compactTap = isSingle
+      ? () => navigate('editLesson', { _editLesson: members[0] })
+      : () => navigate('cohort', { _cohortKey: cohortKey(c) });
+
     const block = h('div', {
-      className: 'agenda-block group' + (isCompact ? ' compact' : ''),
+      className: 'agenda-block' + (isCompact ? ' compact' : ''),
       style: { top: topPx + 'px', height: heightPx + 'px' },
-      ...(isCompact ? { onclick: () => navigate('cohort', { _cohortKey: cohortKey(c) }) } : {})
+      ...(isCompact ? { onclick: compactTap } : {})
     }, header);
 
+    const memberList = h('div', { className: 'agenda-members' });
     if (canListAll) {
-      const memberList = h('div', { className: 'agenda-members' });
+      // Full rows — every student tappable to edit their own record.
       members.forEach(m => {
         memberList.appendChild(h('button', {
           className: 'agenda-member',
           onclick: (e) => { e.stopPropagation(); navigate('editLesson', { _editLesson: m }); }
         },
           h('span', {}, getStudentName(m.studentId)),
-          h('span', { className: 'agenda-member-price' }, '€' + Number(m.total || 0).toFixed(2))
+          ...(isSingle ? [] : [h('span', { className: 'agenda-member-price' }, '€' + Number(m.total || 0).toFixed(2))])
         ));
       });
-      block.appendChild(memberList);
     } else {
-      // Compact: name chips inline, tap anywhere opens cohort detail.
-      const chips = h('div', { className: 'agenda-members' });
+      // Compact chips — tap anywhere on the block (single → edit, multi → cohort).
       members.forEach(m => {
-        chips.appendChild(h('span', { className: 'agenda-member' }, getStudentName(m.studentId)));
+        memberList.appendChild(h('span', { className: 'agenda-member' }, getStudentName(m.studentId)));
       });
-      block.appendChild(chips);
     }
+    block.appendChild(memberList);
 
     overlay.appendChild(block);
   });
