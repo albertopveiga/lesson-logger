@@ -1,6 +1,6 @@
 /**
  * Lesson Logger — Google Apps Script API
- * Version: v2026-04-18 16:45 UTC (Facturas as source of truth for parents/students)
+ * Version: v2026-04-18 18:30 UTC (standalone-safe: uses LESSON_LOGGER_SPREADSHEET_ID when set)
  *
  * Paste this into Extensions → Apps Script in your lesson-logger Google Sheet
  * (the one with Lessons / Students / Config tabs). Deploy as Web App
@@ -38,6 +38,13 @@
  */
 
 // ─── Configuration ───────────────────────────────────────────────────────────
+
+// The Lesson Logger's OWN spreadsheet (the one with Lessons / Students / Config).
+// Required when this Apps Script project is STANDALONE (not container-bound).
+// If container-bound (opened via Extensions → Apps Script from the sheet),
+// leave this as '' and getActiveSpreadsheet() will be used automatically.
+// Find the ID in the sheet URL: docs.google.com/spreadsheets/d/<THIS_PART>/edit
+var LESSON_LOGGER_SPREADSHEET_ID = '';
 
 // The "Facturas" intake spreadsheet (owned by santiagoplopez05@gmail.com).
 // Matches invoice-apps-script.gs — same sheet, same tab.
@@ -165,8 +172,24 @@ function doPost(e) {
 
 // ─── Generic helpers ─────────────────────────────────────────────────────────
 
+function _getLoggerSpreadsheet() {
+  if (LESSON_LOGGER_SPREADSHEET_ID) {
+    return SpreadsheetApp.openById(LESSON_LOGGER_SPREADSHEET_ID);
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    throw new Error(
+      'This Apps Script project is not bound to a spreadsheet. ' +
+      'Set LESSON_LOGGER_SPREADSHEET_ID at the top of apps-script.gs ' +
+      'to the Lesson Logger spreadsheet ID (the <ID> in ' +
+      'docs.google.com/spreadsheets/d/<ID>/edit).'
+    );
+  }
+  return ss;
+}
+
 function getSheet(name) {
-  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  return _getLoggerSpreadsheet().getSheetByName(name);
 }
 
 function sheetToObjects(sheet) {
