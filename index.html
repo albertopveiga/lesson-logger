@@ -484,11 +484,36 @@ function renderHome() {
     wrap.appendChild(h('div', { className: 'summary' },
       h('div', { className: 'summary-title' }, 'This month'),
       h('div', { className: 'summary-grid' },
-        h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, totalH + 'h'), h('div', { className: 'summary-lbl' }, 'lessons')),
+        h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, totalH + 'h'), h('div', { className: 'summary-lbl' }, 'hours')),
         h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, String(uniq)), h('div', { className: 'summary-lbl' }, 'students')),
         h('div', { className: 'summary-item' }, h('div', { className: 'summary-val' }, '€' + totalR.toFixed(0)), h('div', { className: 'summary-lbl' }, 'total'))
       )
     ));
+  }
+
+  // Logged today — surfaces the day's entries so you can see at a glance
+  // what's already been logged and don't double-enter a lesson.
+  const nowDate = new Date();
+  const today = nowDate.getFullYear() + '-' + String(nowDate.getMonth()+1).padStart(2,'0') + '-' + String(nowDate.getDate()).padStart(2,'0');
+  const todayL = state.lessons.filter(l => String(l.date).startsWith(today));
+  if (todayL.length > 0) {
+    const todayBlock = h('div', { className: 'hist-parent', style: { margin: '14px 20px 0' } },
+      h('div', { className: 'hist-parent-header' },
+        h('span', { className: 'hist-parent-name' }, 'Logged today'),
+        h('span', { className: 'hist-parent-total' }, String(todayL.length) + ' lesson' + (todayL.length !== 1 ? 's' : ''))
+      )
+    );
+    todayL.slice().sort((a,b) => String(a.time || '').localeCompare(String(b.time || ''))).forEach(l => {
+      const timeStr = l.time ? l.time + ' · ' : '';
+      todayBlock.appendChild(h('div', { className: 'lesson-row' },
+        h('div', { className: 'lesson-info' },
+          h('span', { className: 'lesson-student' }, getStudentName(l.studentId)),
+          h('span', { className: 'lesson-meta' }, timeStr + getLessonType(l.lessonType).short + ' · ' + l.duration + 'h')
+        ),
+        h('span', { className: 'lesson-total' }, '€' + Number(l.total).toFixed(2))
+      ));
+    });
+    wrap.appendChild(todayBlock);
   }
 
   const content = h('div', { className: 'content' });
@@ -552,6 +577,11 @@ function renderLog() {
   wrap.appendChild(renderHeader(st.name, () => navigate('home')));
 
   const content = h('div', { className: 'content' });
+
+  // Parent subtitle — avoids ambiguity when two students share a first name.
+  content.appendChild(h('p', {
+    style: { fontSize: '13px', color: 'var(--muted)', marginBottom: '14px' }
+  }, getParentName(st.parentId)));
 
   // Date and Time
   const now = new Date();
@@ -638,52 +668,85 @@ function updateLogUI() {
   if (!state._selDur) { priceSec.classList.add('hidden'); return; }
   priceSec.classList.remove('hidden');
 
+  // Only rebuild when the type/duration context changes. Rebuilding on every
+  // price-input keystroke destroys the input and kills focus on mobile — iOS
+  // dismisses the keyboard between keystrokes, making the field unusable.
+  const key = state._selType + '|' + state._selDur;
+  if (priceSec.dataset.builtKey !== key) {
+    priceSec.dataset.builtKey = key;
+    priceSec.innerHTML = '';
+    priceSec.appendChild(buildLogPriceBox());
+    // Scroll the section into view so the Log button is visible without
+    // manual scrolling after picking a duration.
+    if (priceSec.scrollIntoView) priceSec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  updateLogTotals();
+}
+
+function buildLogPriceBox() {
   const st = state.selStudent;
   const stdPrice = getPrice(st, state._selType);
-  const displayPrice = state._customPrice != null ? state._customPrice : stdPrice;
-  const total = state._selDur * displayPrice;
+  const initial = state._customPrice != null ? state._customPrice : stdPrice;
 
-  priceSec.innerHTML = '';
-  const box = h('div', { className: 'price-box' },
+  const priceInput = h('input', {
+    className: 'price-input', type: 'number', inputmode: 'decimal',
+    min: '0', step: '0.5', value: String(initial),
+    oninput: (e) => {
+      state._customPrice = e.target.value === '' ? null : parseFloat(e.target.value);
+      updateLogTotals();
+    }
+  });
+
+  const resetBtn = h('button', {
+    className: 'reset-price', style: { display: 'none' },
+    onclick: () => {
+      state._customPrice = null;
+      priceInput.value = String(stdPrice);
+      updateLogTotals();
+    }
+  }, 'Reset to standard (€' + stdPrice + ')');
+
+  return h('div', { className: 'price-box' },
     h('div', { className: 'price-row' },
       h('span', { className: 'price-lbl' }, 'Price per hour'),
       h('div', { className: 'price-input-wrap' },
         h('span', { className: 'price-currency' }, '€'),
-        h('input', {
-          className: 'price-input', type: 'number', value: String(displayPrice),
-          oninput: (e) => { state._customPrice = e.target.value === '' ? null : parseFloat(e.target.value); updateLogUI(); }
-        })
+        priceInput
       )
     ),
-    state._customPrice != null && state._customPrice !== stdPrice
-      ? h('button', { className: 'reset-price', onclick: () => { state._customPrice = null; updateLogUI(); } }, 'Reset to standard (€' + stdPrice + ')')
-      : null,
+    resetBtn,
     h('div', { className: 'total-row' },
       h('span', { className: 'total-lbl' }, 'Total'),
-      h('span', { className: 'total-val' }, '€' + total.toFixed(2))
+      h('span', { className: 'total-val' }, '€0.00')
     ),
     h('button', {
       className: 'btn-primary', style: { marginTop: '14px' },
       onclick: async () => {
+        const st2 = state.selStudent;
+        if (!st2 || !state._selType || state._selDur == null) return;
         const date = document.getElementById('log-date').value;
         const time = document.getElementById('log-time').value || '';
         const selType = state._selType;
         const selDur = state._selDur;
-        const price = displayPrice;
+        // Read price at click-time — the stored _customPrice may have changed
+        // since the box was built (the box is now built once per type/dur combo).
+        const stdP = getPrice(st2, selType);
+        const price = state._customPrice != null ? state._customPrice : stdP;
         const lessonTotal = selDur * price;
         const tempId = 'tmp_' + Math.random().toString(36).slice(2, 8);
         const lessonData = {
-          id: tempId, studentId: st.id, parentId: st.parentId,
+          id: tempId, studentId: st2.id, parentId: st2.parentId,
           date, time, lessonType: selType, duration: selDur,
           pricePerHour: price, total: lessonTotal
         };
         // Optimistic: show immediately
         state.lessons.push(lessonData);
-        showToast('✓ ' + selDur + 'h for ' + st.name);
+        showToast('✓ ' + selDur + 'h for ' + st2.name);
         navigate('home');
         // Save in background with captured values
         const r = await api('POST', {
-          action: 'addLesson', studentId: st.id, parentId: st.parentId,
+          action: 'addLesson', studentId: st2.id, parentId: st2.parentId,
           date, time, lessonType: selType, duration: selDur,
           pricePerHour: price, total: lessonTotal
         });
@@ -698,7 +761,22 @@ function updateLogUI() {
       }
     }, 'Log lesson')
   );
-  priceSec.appendChild(box);
+}
+
+function updateLogTotals() {
+  const priceSec = document.getElementById('price-section');
+  if (!priceSec) return;
+  const st = state.selStudent;
+  if (!st || !state._selType || state._selDur == null) return;
+  const stdPrice = getPrice(st, state._selType);
+  const displayPrice = state._customPrice != null ? state._customPrice : stdPrice;
+  const totalEl = priceSec.querySelector('.total-val');
+  if (totalEl) totalEl.textContent = '€' + (state._selDur * displayPrice).toFixed(2);
+  const resetBtn = priceSec.querySelector('.reset-price');
+  if (resetBtn) {
+    const show = state._customPrice != null && state._customPrice !== stdPrice;
+    resetBtn.style.display = show ? '' : 'none';
+  }
 }
 
 function renderEditLesson() {
