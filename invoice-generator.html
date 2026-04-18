@@ -578,7 +578,7 @@ function renderPreview() {
           style: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11px', fontWeight: '600', textDecoration: 'underline', padding: '0', cursor: 'pointer' },
           onclick: () => { inv._picking = !inv._picking; render(); }
         }, inv._picking ? 'Hide picker' : 'Change')
-      );
+      ));
     } else {
       card.appendChild(h('div', { className: 'invoice-match missing' },
         '✗ No auto-match — pick a Mollie customer below'
