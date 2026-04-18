@@ -44,7 +44,7 @@
 // If container-bound (opened via Extensions → Apps Script from the sheet),
 // leave this as '' and getActiveSpreadsheet() will be used automatically.
 // Find the ID in the sheet URL: docs.google.com/spreadsheets/d/<THIS_PART>/edit
-var LESSON_LOGGER_SPREADSHEET_ID = '';
+var LESSON_LOGGER_SPREADSHEET_ID = '1DWAPfW721G-uIIapqrDkL24B6pHATS8sCSli4WDolbs';
 
 // The "Facturas" intake spreadsheet (owned by santiagoplopez05@gmail.com).
 // Matches invoice-apps-script.gs — same sheet, same tab.
