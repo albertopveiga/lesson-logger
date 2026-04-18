@@ -229,6 +229,24 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 .agenda-block.compact .agenda-block-meta { display: none; }
 .agenda-block.compact .agenda-block-price { display: none; }
 
+/* Group block (multiple students in one time slot) */
+.agenda-block.group { padding: 5px 4px 5px 10px; cursor: default; }
+.agenda-block-header { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; font-weight: 700; opacity: 0.85; letter-spacing: 0.02em; margin-bottom: 2px; padding-right: 6px; }
+.agenda-block-header .agenda-block-count { opacity: 0.75; }
+.agenda-members { display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.agenda-member {
+  display: flex; justify-content: space-between; align-items: center;
+  background: rgba(255,255,255,0.14); border: none; color: #fff;
+  font-family: var(--font); padding: 3px 8px 3px 6px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.agenda-member:active { background: rgba(255,255,255,0.28); }
+.agenda-member-price { font-size: 11px; font-weight: 700; opacity: 0.9; margin-left: 6px; }
+.agenda-block.group.compact .agenda-members { flex-direction: row; flex-wrap: wrap; gap: 3px; }
+.agenda-block.group.compact .agenda-member { padding: 1px 6px; font-size: 11px; }
+.agenda-block.group.compact .agenda-member-price { display: none; }
+
 /* ─── Info / Warning ─── */
 .info-box { background: var(--accent-lt); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid rgba(45,106,79,0.12); }
 .info-text { font-size: 13px; line-height: 1.4; color: var(--accent); }
@@ -289,7 +307,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 
 <div id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 22:00 UTC
+  v2026-04-18 22:30 UTC
 </div>
 
 <script>
@@ -489,6 +507,7 @@ function render() {
     pricing: renderPricing,
     history: renderHistory,
     review: renderReview,
+    cohort: renderCohort,
     settings: renderSettings,
   };
 
@@ -1293,6 +1312,33 @@ function addDaysYMD(ymd, delta) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
+function formatHm(min) {
+  var h = Math.floor(min / 60) % 24;
+  var m = min % 60;
+  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+}
+
+// Group lessons that share (date, startMin, durMin, lessonType) into cohorts.
+// Every group lesson with multiple students logged at the same slot collapses
+// to a single block with every student listed.
+function buildCohorts(lessonsWithPos, date) {
+  const map = new Map();
+  for (const it of lessonsWithPos) {
+    const key = date + '|' + it.startMin + '|' + it.durMin + '|' + it.l.lessonType;
+    if (!map.has(key)) {
+      map.set(key, { date, startMin: it.startMin, durMin: it.durMin, lessonType: it.l.lessonType, members: [] });
+    }
+    map.get(key).members.push(it.l);
+  }
+  // Stable ordering: time ascending, then by lessonType for deterministic layout.
+  return [...map.values()].sort((a, b) => a.startMin - b.startMin || a.lessonType.localeCompare(b.lessonType));
+}
+
+// Serializable cohort handle — survives re-renders and state.lessons updates.
+function cohortKey(c) {
+  return { date: c.date, startMin: c.startMin, durMin: c.durMin, lessonType: c.lessonType };
+}
+
 function renderReview() {
   const wrap = h('div');
   wrap.appendChild(renderHeader('Review', () => navigate('home')));
@@ -1366,31 +1412,78 @@ function renderReview() {
     ));
   }
 
-  // Overlay: absolutely-positioned lesson blocks
+  // Group lessons at the same (startMin, durMin, lessonType) into cohorts so
+  // group lessons with several students show every name in a single block.
+  const cohorts = buildCohorts(dayLessons, selectedDate);
+
+  // Overlay: absolutely-positioned cohort blocks
   const overlay = h('div', { className: 'agenda-blocks', style: { height: gridHeight + 'px' } });
-  dayLessons.forEach(({ l, startMin, durMin }) => {
-    const topPx = ((startMin - startH * 60) / 60) * AGENDA_PX_PER_HOUR;
-    const heightPx = Math.max(28, (durMin / 60) * AGENDA_PX_PER_HOUR - 4); // -4 for vertical breathing room
-    const isCompact = heightPx < 52;
+  cohorts.forEach(c => {
+    const topPx = ((c.startMin - startH * 60) / 60) * AGENDA_PX_PER_HOUR;
+    const heightPx = Math.max(28, (c.durMin / 60) * AGENDA_PX_PER_HOUR - 4);
+    const startHm = formatHm(c.startMin);
+    const endHm = formatHm(c.startMin + c.durMin);
+    const typeShort = getLessonType(c.lessonType).short;
+    const members = c.members;
+    const cohortTotal = members.reduce((s, m) => s + Number(m.total || 0), 0);
 
-    const startHm = String(Math.floor(startMin / 60)).padStart(2, '0') + ':' + String(startMin % 60).padStart(2, '0');
-    const endTotal = startMin + durMin;
-    const endHm = String(Math.floor(endTotal / 60) % 24).padStart(2, '0') + ':' + String(endTotal % 60).padStart(2, '0');
+    if (members.length === 1) {
+      // Single-student block — the classic layout.
+      const m = members[0];
+      const isCompact = heightPx < 52;
+      overlay.appendChild(h('div', {
+        className: 'agenda-block' + (isCompact ? ' compact' : ''),
+        style: { top: topPx + 'px', height: heightPx + 'px' },
+        onclick: () => navigate('editLesson', { _editLesson: m })
+      },
+        h('div', { className: 'agenda-block-time' }, startHm + '–' + endHm),
+        h('div', { className: 'agenda-block-name' }, getStudentName(m.studentId)),
+        h('div', { className: 'agenda-block-meta' }, typeShort + ' · ' + m.duration + 'h'),
+        h('div', { className: 'agenda-block-price' }, '€' + Number(m.total || 0).toFixed(2))
+      ));
+      return;
+    }
 
-    const studentName = getStudentName(l.studentId);
-    const typeShort = getLessonType(l.lessonType).short;
-    const priceStr = '€' + Number(l.total || 0).toFixed(2);
+    // Multi-student cohort (group lesson or overlap).
+    // If the block is tall enough to list every member (~20px/row + header),
+    // render them as tappable rows; otherwise fall back to a compact summary
+    // that opens the cohort detail view on tap.
+    const estimatedRowed = 24 + members.length * 22;
+    const canListAll = heightPx >= estimatedRowed;
+    const isCompact = !canListAll;
+
+    const header = h('div', { className: 'agenda-block-header' },
+      h('span', { className: 'agenda-block-time' }, startHm + '–' + endHm + ' · ' + typeShort),
+      h('span', { className: 'agenda-block-count' }, members.length + ' · €' + cohortTotal.toFixed(2))
+    );
 
     const block = h('div', {
-      className: 'agenda-block' + (isCompact ? ' compact' : ''),
+      className: 'agenda-block group' + (isCompact ? ' compact' : ''),
       style: { top: topPx + 'px', height: heightPx + 'px' },
-      onclick: () => navigate('editLesson', { _editLesson: l })
-    },
-      h('div', { className: 'agenda-block-time' }, startHm + '–' + endHm),
-      h('div', { className: 'agenda-block-name' }, studentName),
-      h('div', { className: 'agenda-block-meta' }, typeShort + ' · ' + l.duration + 'h'),
-      h('div', { className: 'agenda-block-price' }, priceStr)
-    );
+      ...(isCompact ? { onclick: () => navigate('cohort', { _cohortKey: cohortKey(c) }) } : {})
+    }, header);
+
+    if (canListAll) {
+      const memberList = h('div', { className: 'agenda-members' });
+      members.forEach(m => {
+        memberList.appendChild(h('button', {
+          className: 'agenda-member',
+          onclick: (e) => { e.stopPropagation(); navigate('editLesson', { _editLesson: m }); }
+        },
+          h('span', {}, getStudentName(m.studentId)),
+          h('span', { className: 'agenda-member-price' }, '€' + Number(m.total || 0).toFixed(2))
+        ));
+      });
+      block.appendChild(memberList);
+    } else {
+      // Compact: name chips inline, tap anywhere opens cohort detail.
+      const chips = h('div', { className: 'agenda-members' });
+      members.forEach(m => {
+        chips.appendChild(h('span', { className: 'agenda-member' }, getStudentName(m.studentId)));
+      });
+      block.appendChild(chips);
+    }
+
     overlay.appendChild(block);
   });
 
@@ -1403,6 +1496,64 @@ function renderReview() {
       style: { textAlign: 'center', color: 'var(--muted)', fontSize: '13px', marginTop: '14px' }
     }, 'No lessons logged on this day'));
   }
+
+  wrap.appendChild(content);
+  return wrap;
+}
+
+// Cohort detail — fallback view for short/overflowing group blocks. Re-derives
+// members from state.lessons each render so edits stay in sync.
+function renderCohort() {
+  const wrap = h('div');
+  wrap.appendChild(renderHeader('Group lesson', () => navigate('review')));
+  const content = h('div', { className: 'content' });
+
+  const key = state._cohortKey;
+  if (!key) {
+    content.appendChild(h('div', { className: 'empty' },
+      h('p', { className: 'empty-text' }, 'No group selected')));
+    wrap.appendChild(content);
+    return wrap;
+  }
+
+  const members = state.lessons.filter(l =>
+    String(l.date).slice(0, 10) === key.date &&
+    l.lessonType === key.lessonType &&
+    parseTimeToMin(l.time) === key.startMin &&
+    Math.max(15, Math.round(Number(l.duration) * 60)) === key.durMin
+  );
+
+  const startHm = formatHm(key.startMin);
+  const endHm = formatHm(key.startMin + key.durMin);
+  const typeShort = getLessonType(key.lessonType).short;
+  const total = members.reduce((s, m) => s + Number(m.total || 0), 0);
+
+  content.appendChild(h('div', { className: 'info-box' },
+    h('p', { className: 'info-text' },
+      startHm + '–' + endHm + ' · ' + typeShort + ' · ' + members.length + (members.length === 1 ? ' student' : ' students') + ' · €' + total.toFixed(2))
+  ));
+
+  if (members.length === 0) {
+    content.appendChild(h('p', {
+      style: { textAlign: 'center', color: 'var(--muted)', fontSize: '13px' }
+    }, 'This group no longer has any lessons — they may have been deleted.'));
+    wrap.appendChild(content);
+    return wrap;
+  }
+
+  content.appendChild(h('p', { className: 'section-label', style: { marginTop: '4px' } }, 'Students in this group'));
+  members.forEach(m => {
+    content.appendChild(h('div', {
+      className: 'lesson-row', style: { cursor: 'pointer', padding: '10px 0' },
+      onclick: () => navigate('editLesson', { _editLesson: m })
+    },
+      h('div', { className: 'lesson-info' },
+        h('span', { className: 'lesson-student' }, getStudentName(m.studentId)),
+        h('span', { className: 'lesson-meta' }, getParentName(m.parentId) + ' · ' + m.duration + 'h × €' + m.pricePerHour)
+      ),
+      h('span', { className: 'lesson-total' }, '€' + Number(m.total || 0).toFixed(2))
+    ));
+  });
 
   wrap.appendChild(content);
   return wrap;
