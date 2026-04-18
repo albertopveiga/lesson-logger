@@ -90,18 +90,19 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 14:14 UTC
+  v2026-04-18 20:00 UTC (no more copy/paste — pulls lessons directly from Lesson Logger)
 </div>
 
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
 
 let state = {
-  step: 'settings', // settings, paste, syncing, preview, generating, results
+  step: 'settings', // settings, pick, syncing, preview, generating, results
   apiUrl: localStorage.getItem('ig_api_url') || '',
   mollieKey: localStorage.getItem('ig_mollie_key') || '',
-  exportText: '',
-  invoices: [],       // parsed from export, enriched with recipient data
+  lessonLoggerUrl: localStorage.getItem('ig_lesson_logger_url') || '',
+  selectedMonth: '', // 'YYYY-MM' chosen by the user on the pick step
+  invoices: [],       // built from lesson-logger data, enriched with recipient data
   results: [],        // creation results
   syncDiagnostics: null, // { totalRows, uniqueParents, matched, unmatched } or null
   syncWarning: null,  // string if the sheet lookup failed but we fell back
@@ -125,46 +126,83 @@ async function api(body) {
   }
 }
 
-// ─── Parser ──────────────────────────────────────────────────────────────────
+// Talks to the lesson-logger Apps Script (separate URL from the invoice
+// generator's). Same POST-with-text-plain pattern so Apps Script accepts it
+// without the preflight dance.
+async function lessonLoggerApi(body) {
+  try {
+    const r = await fetch(state.lessonLoggerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    return await r.json();
+  } catch (e) {
+    console.error('Lesson Logger API error:', e);
+    return { error: 'Connection error: ' + e.message };
+  }
+}
 
-function parseExport(text) {
-  const invoices = [];
-  let currentParent = null;
+// Lesson type ids in the sheet (ind_pres, ind_online, grp_pres, grp_online)
+// → display labels the invoice generator uses in line descriptions. Keep in
+// sync with LESSON_TYPES in the lesson logger.
+const LESSON_TYPE_LABELS = {
+  ind_pres:   'Ind · Pres',
+  ind_online: 'Ind · Online',
+  grp_pres:   'Group · Pres',
+  grp_online: 'Group · Online',
+};
 
-  const lines = text.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
+function lessonTypeShortLabel(id) {
+  return LESSON_TYPE_LABELS[id] || String(id || '');
+}
 
-    // Parent line: "▸ Parent Name"
-    if (trimmed.startsWith('▸')) {
-      const name = trimmed.substring(1).trim();
-      currentParent = { name, lines: [], total: 0 };
-      invoices.push(currentParent);
-      continue;
-    }
-
-    // Lesson line: "  2026-04-14 18:35  Student  Type  1h × €50 = €50.00"
-    if (currentParent && trimmed.match(/^\d{4}-\d{2}-\d{2}/)) {
-      const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})?\s+(.+?)\s+(Ind · Pres|Ind · Online|Group · Pres|Group · Online)\s+(\d+\.?\d*)\s*h\s*×\s*€\s*(\d+\.?\d*)\s*=\s*€\s*(\d+\.?\d*)/);
-      if (match) {
-        currentParent.lines.push({
-          date: match[1],
-          time: match[2] || '',
-          student: match[3].trim(),
-          type: match[4],
-          duration: parseFloat(match[5]),
-          pricePerHour: parseFloat(match[6]),
-          total: parseFloat(match[7]),
-          description: match[3].trim() + ' — ' + match[4] + ' — ' + match[1] + (match[2] ? ' ' + match[2] : '') + ' — ' + match[5] + 'h',
-          quantity: 1,
-          unitPrice: parseFloat(match[7]),
-        });
-        currentParent.total += parseFloat(match[7]);
-      }
-    }
+// Fetch + shape: pull parents/students/lessons from the lesson logger, filter
+// to the chosen month, and group into per-parent invoice objects with the same
+// shape the old parseExport() produced (so renderPreview/generateInvoices
+// don't need any changes).
+async function loadInvoicesForMonth(month) {
+  const data = await lessonLoggerApi({ action: 'getAllData' });
+  if (!data || data.error) {
+    throw new Error((data && data.error) || 'Lesson logger returned no data');
   }
 
-  return invoices;
+  const parentById = {};
+  (data.parents || []).forEach(p => { parentById[p.id] = p; });
+  const studentById = {};
+  (data.students || []).forEach(s => { studentById[s.id] = s; });
+
+  const lessons = (data.lessons || []).filter(l => String(l.date || '').substring(0, 7) === month);
+
+  const byParent = {};
+  lessons.forEach(l => {
+    const parent = parentById[l.parentId];
+    if (!parent) return;  // orphaned lesson (parent removed / inactive in Facturas)
+    if (!byParent[l.parentId]) {
+      byParent[l.parentId] = { name: parent.name, lines: [], total: 0 };
+    }
+    const student = studentById[l.studentId];
+    const studentName = student ? student.name : '(unknown student)';
+    const typeLabel = lessonTypeShortLabel(l.lessonType);
+    const total = Number(l.total) || 0;
+    byParent[l.parentId].lines.push({
+      date: l.date,
+      time: l.time || '',
+      student: studentName,
+      type: typeLabel,
+      duration: Number(l.duration) || 0,
+      pricePerHour: Number(l.pricePerHour) || 0,
+      total: total,
+      description: studentName + ' — ' + typeLabel + ' — ' + l.date + (l.time ? ' ' + l.time : '') + ' — ' + (Number(l.duration) || 0) + 'h',
+      quantity: 1,
+      unitPrice: total,
+    });
+    byParent[l.parentId].total += total;
+  });
+
+  // Sort by parent name, stable.
+  return Object.values(byParent).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ─── Recipient book ──────────────────────────────────────────────────────────
@@ -313,7 +351,7 @@ function render() {
   const app = document.getElementById('app');
   const views = {
     settings: renderSettings,
-    paste: renderPaste,
+    pick: renderPick,
     syncing: renderSyncing,
     preview: renderPreview,
     generating: renderGenerating,
@@ -343,7 +381,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 function renderSteps(current) {
-  const steps = ['settings', 'paste', 'preview', 'results'];
+  const steps = ['settings', 'pick', 'preview', 'results'];
   const idx = steps.indexOf(current);
   const wrap = h('div', { className: 'step-indicator' });
   steps.forEach((s, i) => {
@@ -359,12 +397,17 @@ function renderSettings() {
   wrap.appendChild(renderSteps('settings'));
 
   wrap.appendChild(h('div', { className: 'info-box' },
-    h('p', { className: 'info-text', innerHTML: 'Configure your connections. You need:<br>• The Apps Script URL (proxy for Mollie API)<br>• Your Mollie Live API key' })
+    h('p', { className: 'info-text', innerHTML: 'Configure your connections. You need:<br>• The Invoice Generator Apps Script URL (proxy for Mollie API)<br>• The Lesson Logger Apps Script URL (source of lesson data)<br>• Your Mollie Live API key' })
   ));
 
   wrap.appendChild(h('div', { className: 'form-group' },
-    h('label', { className: 'form-label' }, 'Apps Script URL'),
+    h('label', { className: 'form-label' }, 'Invoice Generator Apps Script URL'),
     h('input', { className: 'form-input', type: 'url', id: 'cfg-url', value: state.apiUrl, placeholder: 'https://script.google.com/macros/s/...' })
+  ));
+
+  wrap.appendChild(h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, 'Lesson Logger Apps Script URL'),
+    h('input', { className: 'form-input', type: 'url', id: 'cfg-ll-url', value: state.lessonLoggerUrl, placeholder: 'https://script.google.com/macros/s/...' })
   ));
 
   wrap.appendChild(h('div', { className: 'form-group' },
@@ -373,13 +416,16 @@ function renderSettings() {
   ));
 
   wrap.appendChild(h('button', { className: 'btn-primary', onclick: () => {
-    const url = document.getElementById('cfg-url').value.trim();
-    const key = document.getElementById('cfg-key').value.trim();
+    const url   = document.getElementById('cfg-url').value.trim();
+    const llUrl = document.getElementById('cfg-ll-url').value.trim();
+    const key   = document.getElementById('cfg-key').value.trim();
     state.apiUrl = url;
+    state.lessonLoggerUrl = llUrl;
     state.mollieKey = key;
     localStorage.setItem('ig_api_url', url);
+    localStorage.setItem('ig_lesson_logger_url', llUrl);
     localStorage.setItem('ig_mollie_key', key);
-    state.step = 'paste';
+    state.step = 'pick';
     render();
   }}, 'Continue'));
 
@@ -406,19 +452,57 @@ function renderSettings() {
   return wrap;
 }
 
-// ─── Paste ───────────────────────────────────────────────────────────────────
+// ─── Pick month ──────────────────────────────────────────────────────────────
 
-function renderPaste() {
+// Build a month dropdown with the last 12 months, most recent first. We default
+// to last month (the common case: invoicing at the start of a new month for
+// lessons given during the previous month).
+function monthOptions() {
+  const out = [];
+  const now = new Date();
+  // Start one month ago.
+  now.setDate(1);
+  now.setMonth(now.getMonth() - 1);
+  for (let i = 0; i < 13; i++) {  // last month + 12 prior = 13 total
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const ym = y + '-' + m;
+    const label = now.toLocaleString('en-GB', { month: 'long', year: 'numeric' });
+    out.push({ value: ym, label: label });
+    now.setMonth(now.getMonth() - 1);
+  }
+  // Also include the current month at the top, in case she invoices mid-month.
+  const today = new Date();
+  const curY = today.getFullYear();
+  const curM = String(today.getMonth() + 1).padStart(2, '0');
+  const curYm = curY + '-' + curM;
+  const curLabel = today.toLocaleString('en-GB', { month: 'long', year: 'numeric' }) + ' (current)';
+  out.unshift({ value: curYm, label: curLabel });
+  return out;
+}
+
+function renderPick() {
   const wrap = h('div');
-  wrap.appendChild(renderSteps('paste'));
+  wrap.appendChild(renderSteps('pick'));
 
   wrap.appendChild(h('div', { className: 'info-box' },
-    h('p', { className: 'info-text' }, 'Paste the export from the Lesson Logger app. Use the "Copy invoice data" button in the Export section.')
+    h('p', { className: 'info-text' }, 'Pick the month you want to invoice for. Lesson data is pulled directly from the Lesson Logger — no copy/paste.')
   ));
 
+  const options = monthOptions();
+  // Default: last month (index 1 — the first item that isn't "current").
+  const defaultValue = state.selectedMonth || (options[1] ? options[1].value : options[0].value);
+
+  const select = h('select', { className: 'form-input', id: 'pick-month' });
+  options.forEach(o => {
+    const opt = h('option', { value: o.value }, o.label);
+    if (o.value === defaultValue) opt.setAttribute('selected', '');
+    select.appendChild(opt);
+  });
+
   wrap.appendChild(h('div', { className: 'form-group' },
-    h('label', { className: 'form-label' }, 'Invoice export data'),
-    h('textarea', { className: 'form-input', id: 'export-text', rows: '12', placeholder: 'INVOICE DATA — April 2026\n═══════\n\n▸ Parent Name\n  2026-04-14 18:00  Student  Ind · Pres  1h × €50 = €50.00\n  ...' })
+    h('label', { className: 'form-label' }, 'Month to invoice'),
+    select
   ));
 
   if (state.error) {
@@ -426,21 +510,35 @@ function renderPaste() {
   }
 
   wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: async () => {
-    const text = document.getElementById('export-text').value;
-    if (!text.trim()) { state.error = 'Please paste the export data'; render(); return; }
-
-    const invoices = parseExport(text);
-    if (invoices.length === 0) { state.error = 'Could not parse any invoices from this text'; render(); return; }
-
-    state.exportText = text;
-    state.invoices = invoices;
+    const month = document.getElementById('pick-month').value;
+    state.selectedMonth = month;
     state.error = null;
     state.syncDiagnostics = null;
     state.syncWarning = null;
     state.step = 'syncing';
     render();
 
-    // Pull recipient data from the intake spreadsheet.
+    // Step 1: pull lessons + parents + students from the lesson logger.
+    let invoices = [];
+    try {
+      invoices = await loadInvoicesForMonth(month);
+    } catch (e) {
+      state.error = 'Could not load lessons from the Lesson Logger: ' + e.message;
+      state.step = 'pick';
+      render();
+      return;
+    }
+
+    if (invoices.length === 0) {
+      state.error = 'No lessons found for ' + month + '. Log some lessons first, or pick another month.';
+      state.step = 'pick';
+      render();
+      return;
+    }
+
+    state.invoices = invoices;
+
+    // Step 2: enrich with recipient address data from the Facturas sheet.
     const parentNames = invoices.map(i => i.name);
     let lookup = null;
     try {
@@ -459,7 +557,6 @@ function renderPaste() {
     invoices.forEach(inv => {
       const fromSheet = lookup ? lookup[inv.name] : null;
       inv.recipient = mergeSheetIntoLocal(inv.name, fromSheet);
-      // Persist merged recipient so next run (even without network) has it.
       saveRecipient(inv.name, inv.recipient);
       inv.include = recipientIsReady(inv.recipient);
       inv._open = !recipientIsReady(inv.recipient);
@@ -467,7 +564,7 @@ function renderPaste() {
 
     state.step = 'preview';
     render();
-  }}, 'Parse & review'));
+  }}, 'Load lessons & review'));
 
   wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'settings'; render(); } }, '← Settings'));
 
@@ -478,10 +575,10 @@ function renderPaste() {
 
 function renderSyncing() {
   const wrap = h('div');
-  wrap.appendChild(renderSteps('paste'));
+  wrap.appendChild(renderSteps('pick'));
   wrap.appendChild(h('div', { className: 'loading' },
     h('span', { className: 'spinner' }),
-    'Pulling parent data from the Facturas sheet…'
+    'Loading lessons for ' + (state.selectedMonth || '…') + ' and pulling parent data from the Facturas sheet…'
   ));
   wrap.appendChild(h('div', {
     style: { textAlign: 'center', fontSize: '12px', color: 'var(--muted)', marginTop: '8px' }
@@ -543,7 +640,7 @@ function renderPreview() {
     onclick: () => generateInvoices()
   }, canGenerate ? 'Create ' + toGenerate.length + ' draft invoice' + (toGenerate.length !== 1 ? 's' : '') + ' in Mollie' : 'Fill all required recipient fields to continue'));
 
-  wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'paste'; state.error = null; render(); } }, '← Back to paste'));
+  wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'pick'; state.error = null; render(); } }, '← Pick another month'));
 
   return wrap;
 }
@@ -796,7 +893,7 @@ function renderResults() {
   wrap.appendChild(h('div', { className: 'divider' }));
 
   wrap.appendChild(h('button', { className: 'btn-primary', style: { marginBottom: '10px' }, onclick: () => {
-    state.step = 'paste';
+    state.step = 'pick';
     state.invoices = [];
     state.results = [];
     state.error = null;
@@ -814,7 +911,7 @@ function renderResults() {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
-if (state.apiUrl && state.mollieKey) state.step = 'paste';
+if (state.apiUrl && state.mollieKey && state.lessonLoggerUrl) state.step = 'pick';
 render();
 </script>
 </body>
