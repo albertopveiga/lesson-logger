@@ -90,7 +90,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 14:03 UTC
+  v2026-04-18 14:14 UTC
 </div>
 
 <script>
@@ -235,7 +235,7 @@ function loadRecipient(parentName) {
     postalCode: '',
     city: '',
     country: 'NL',
-    locale: 'nl_NL',
+    locale: 'en_GB',
   };
 }
 
@@ -686,7 +686,7 @@ async function generateInvoices() {
   const mollieInvoices = toGenerate.map(inv => ({
     recipientIdentifier: slugify(inv.name),
     customerName: inv.name,
-    recipient: Object.assign({ type: 'consumer', locale: 'nl_NL' }, inv.recipient),
+    recipient: Object.assign({ type: 'consumer', locale: 'en_GB' }, inv.recipient),
     lines: inv.lines.map(l => ({
       description: l.description,
       quantity: 1,

@@ -91,7 +91,7 @@ function json(obj) {
  * Each recipient-or-null is either the parsed recipient or null if no row
  * was found for that parent name. Shape:
  *   { email, givenName, familyName, streetAndNumber, postalCode, city,
- *     country: 'NL', locale: 'nl_NL', _source: 'sheet',
+ *     country: 'NL', locale: 'en_GB', _source: 'sheet',
  *     _parsed: { cityFromField, postcodeCleaned } }
  */
 function lookupRecipients(parentNames) {
@@ -223,7 +223,7 @@ function buildRecipient(row, col) {
     postalCode:      parsed.postcode,
     city:            parsed.city,
     country:         'NL',                 // we assume NL; form can override
-    locale:          'nl_NL',
+    locale:          'en_GB',
     _source:         'sheet',
     _raw: {
       countryFromSheet: rawCountry,
@@ -341,14 +341,14 @@ function createDraftInvoice(apiKey, invoice) {
     }
   });
   if (!recipient.type) recipient.type = 'consumer';
-  if (!recipient.locale) recipient.locale = 'nl_NL';
+  if (!recipient.locale) recipient.locale = 'en_GB';
 
   var body = {
     status: 'draft',
     currency: 'EUR',
     vatScheme: 'standard',
     vatMode: 'inclusive',
-    paymentTerm: '30 days',
+    paymentTerm: '14 days',
     recipientIdentifier: invoice.recipientIdentifier || '',
     recipient: recipient,
     lines: invoice.lines.map(function(line) {
