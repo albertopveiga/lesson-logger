@@ -166,48 +166,129 @@ function normalize(name) {
     .replace(/\s+/g, ' ').trim();
 }
 
+// Dutch tussenvoegsels — "van", "de", "van der", etc. — appear in most Dutch
+// surnames and break naive matching because the lesson-logger entry and the
+// Mollie customer record rarely agree on whether they're included.
+const TUSSENVOEGSELS = new Set([
+  'van', 'der', 'den', 'de', 'het', 'te', 'ter', 'ten',
+  'op', 'in', 'aan', 'over', 'uit', 'bij', 'of',
+  'vande', 'vander', 'vanden'
+]);
+
+// Prefixes the parent name might start with in the logger ("Familie Jansen")
+// that won't appear in Mollie. Also strip lone single-letter initials like "J".
+const PREFIX_NOISE = new Set(['familie', 'fam', 'family', 'gezin', 'mr', 'mrs', 'dhr', 'mw', 'mevr']);
+
+function nameTokens(name) {
+  return normalize(name).split(' ').filter(w => w.length > 0);
+}
+
+// Strip particles, single-letter initials, and noise prefixes. What remains
+// should be the "real" name tokens (first name + surname).
+function coreTokens(name) {
+  return nameTokens(name).filter(t =>
+    !TUSSENVOEGSELS.has(t) && !PREFIX_NOISE.has(t) && t.length > 1
+  );
+}
+
+function lastCoreToken(name) {
+  const core = coreTokens(name);
+  return core[core.length - 1] || '';
+}
+
+function firstCoreToken(name) {
+  const core = coreTokens(name);
+  return core[0] || '';
+}
+
 function findMollieCustomer(parentName, customers) {
   const normParent = normalize(parentName);
-  console.log('Matching "' + parentName + '" (normalized: "' + normParent + '") against ' + customers.length + ' customers');
-  
-  // Exact match (normalized)
+  const coreP = coreTokens(parentName);
+  const lastP = lastCoreToken(parentName);
+  const firstP = firstCoreToken(parentName);
+
+  // 1. Exact normalized match
   let match = customers.find(c => normalize(c.name) === normParent);
   if (match) return { customer: match, confidence: 'exact' };
-  
-  // All words from parent name found in customer name
-  const parentWords = normParent.split(' ');
+
+  // 2. Same core tokens in any order (particles and "Familie" stripped from both sides)
   match = customers.find(c => {
-    const custNorm = normalize(c.name);
-    return parentWords.every(w => custNorm.includes(w));
+    const coreC = coreTokens(c.name);
+    if (coreC.length === 0 || coreC.length !== coreP.length) return false;
+    return [...coreC].sort().join(' ') === [...coreP].sort().join(' ');
   });
   if (match) return { customer: match, confidence: 'high' };
-  
-  // Customer words all found in parent name
+
+  // 3. All parent core tokens present in customer (handles Mollie having extra middle names)
+  if (coreP.length > 0) {
+    match = customers.find(c => {
+      const coreC = coreTokens(c.name);
+      return coreP.every(w => coreC.includes(w));
+    });
+    if (match) return { customer: match, confidence: 'high' };
+  }
+
+  // 4. All customer core tokens present in parent (handles logger having extra words)
   match = customers.find(c => {
-    const custWords = normalize(c.name).split(' ');
-    return custWords.length >= 2 && custWords.every(w => normParent.includes(w));
-  });
-  if (match) return { customer: match, confidence: 'high' };
-  
-  // Last name match (at least 2 words matching)
-  match = customers.find(c => {
-    const custWords = normalize(c.name).split(' ');
-    const matching = parentWords.filter(w => custWords.includes(w));
-    return matching.length >= 2;
+    const coreC = coreTokens(c.name);
+    return coreC.length >= 1 && coreC.every(w => coreP.includes(w));
   });
   if (match) return { customer: match, confidence: 'medium' };
-  
-  // Single last-name match (last word)
-  const parentLast = parentWords[parentWords.length - 1];
-  if (parentLast.length >= 3) {
+
+  // 5. Last-name (after particle strip) match, with initial disambiguation
+  if (lastP.length >= 3) {
+    const sameLast = customers.filter(c => lastCoreToken(c.name) === lastP);
+    if (sameLast.length === 1) return { customer: sameLast[0], confidence: 'medium' };
+    if (sameLast.length > 1 && firstP) {
+      // Match by first-name initial — handles "Jan de Vries" vs "J. de Vries"
+      const byInitial = sameLast.find(c => {
+        const fc = firstCoreToken(c.name);
+        return fc && (fc === firstP || fc[0] === firstP[0]);
+      });
+      if (byInitial) return { customer: byInitial, confidence: 'low' };
+    }
+  }
+
+  // 6. Last-name substring fallback — catches minor spelling drift
+  if (lastP.length >= 4) {
     match = customers.find(c => {
-      const custWords = normalize(c.name).split(' ');
-      return custWords[custWords.length - 1] === parentLast;
+      const lc = lastCoreToken(c.name);
+      return lc.length >= 4 && (lc.includes(lastP) || lastP.includes(lc));
     });
     if (match) return { customer: match, confidence: 'low' };
   }
-  
+
   return null;
+}
+
+// ─── Match cache ─────────────────────────────────────────────────────────────
+// Persist every confirmed mapping (auto-matched or manually picked) so next
+// month's run resolves the same parents without any manual work.
+
+function getNameCache() {
+  try { return JSON.parse(localStorage.getItem('ig_name_cache') || '{}'); }
+  catch { return {}; }
+}
+
+function saveNameCache(cache) {
+  try { localStorage.setItem('ig_name_cache', JSON.stringify(cache)); } catch {}
+}
+
+function cacheKey(parentName) {
+  return normalize(parentName);
+}
+
+function rememberMatch(parentName, customer) {
+  if (!customer || !customer.id) return;
+  const cache = getNameCache();
+  cache[cacheKey(parentName)] = { id: customer.id, name: customer.name || '' };
+  saveNameCache(cache);
+}
+
+function forgetMatch(parentName) {
+  const cache = getNameCache();
+  delete cache[cacheKey(parentName)];
+  saveNameCache(cache);
 }
 
 // ─── Render ──────────────────────────────────────────────────────────────────
@@ -283,6 +364,27 @@ function renderSettings() {
     render();
   }}, 'Continue'));
 
+  // Match cache status — show how many parent→customer mappings are stored
+  // and offer an escape hatch if something ever gets cached incorrectly.
+  const cache = getNameCache();
+  const cacheCount = Object.keys(cache).length;
+  if (cacheCount > 0) {
+    wrap.appendChild(h('div', {
+      style: { marginTop: '18px', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }
+    }, cacheCount + ' remembered customer match' + (cacheCount !== 1 ? 'es' : '')));
+
+    wrap.appendChild(h('button', {
+      className: 'btn-secondary',
+      style: { marginTop: '8px' },
+      onclick: () => {
+        if (confirm('Forget all ' + cacheCount + ' remembered matches? Next time you\'ll need to re-match any parents the auto-matcher gets wrong.')) {
+          localStorage.removeItem('ig_name_cache');
+          render();
+        }
+      }
+    }, 'Clear remembered matches'));
+  }
+
   return wrap;
 }
 
@@ -328,13 +430,33 @@ function renderPaste() {
       console.log('First 5:', result.customers.slice(0, 5).map(c => c.name));
       console.log('Looking for:', state.invoices.map(i => i.name));
       
-      // Match each invoice to a customer
+      // Match each invoice to a customer. Cache takes priority — once a
+      // parent has been matched (manually or auto) the mapping sticks so
+      // next month's export resolves without manual work.
+      const cache = getNameCache();
       state.invoices.forEach(inv => {
+        const cached = cache[cacheKey(inv.name)];
+        if (cached) {
+          const cust = state.mollieCustomers.find(c => c.id === cached.id);
+          if (cust) {
+            inv.mollieCustomer = cust;
+            inv.matchConfidence = 'remembered';
+            inv.include = true;
+            return;
+          }
+          // Cached customer no longer exists in Mollie — fall through to heuristic.
+        }
         const match = findMollieCustomer(inv.name, state.mollieCustomers);
         if (match) {
           inv.mollieCustomer = match.customer;
           inv.matchConfidence = match.confidence;
           inv.include = true;
+          // Remember high-confidence auto-matches so she doesn't have to
+          // re-approve them. Medium/low stay unremembered and will be
+          // re-evaluated next month (or corrected via manual pick).
+          if (match.confidence === 'exact' || match.confidence === 'high') {
+            rememberMatch(inv.name, match.customer);
+          }
         } else {
           inv.mollieCustomer = null;
           inv.matchConfidence = null;
@@ -352,6 +474,59 @@ function renderPaste() {
   wrap.appendChild(h('button', { className: 'btn-secondary', onclick: () => { state.step = 'settings'; render(); } }, '← Settings'));
 
   return wrap;
+}
+
+// ─── Customer picker ─────────────────────────────────────────────────────────
+// A plain <select> over every Mollie customer. Used when auto-match failed
+// OR when the user clicks "Change" on a matched card. Picking a customer
+// writes to the cache so the same name resolves automatically next month.
+
+function renderCustomerPicker(inv) {
+  const sorted = [...state.mollieCustomers].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', 'nl')
+  );
+
+  const select = h('select', {
+    className: 'form-input',
+    style: { marginTop: '8px', marginBottom: '6px', fontSize: '13px' },
+    onchange: (e) => {
+      const cid = e.target.value;
+      if (!cid) {
+        // Blank option = unlink. Forget the cached mapping so we don't
+        // auto-restore it next time.
+        inv.mollieCustomer = null;
+        inv.matchConfidence = null;
+        inv.include = false;
+        inv._picking = false;
+        forgetMatch(inv.name);
+        render();
+        return;
+      }
+      const cust = state.mollieCustomers.find(c => c.id === cid);
+      if (cust) {
+        inv.mollieCustomer = cust;
+        inv.matchConfidence = 'manual';
+        inv.include = true;
+        inv._picking = false;
+        rememberMatch(inv.name, cust);
+        render();
+      }
+    }
+  });
+
+  const placeholder = inv.mollieCustomer
+    ? '— unlink and pick again —'
+    : '— pick a Mollie customer —';
+  select.appendChild(h('option', { value: '' }, placeholder));
+
+  sorted.forEach(c => {
+    const label = (c.name || '(no name)') + (c.email ? ' · ' + c.email : '');
+    const opt = h('option', { value: c.id }, label);
+    if (inv.mollieCustomer && inv.mollieCustomer.id === c.id) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  return select;
 }
 
 // ─── Preview ─────────────────────────────────────────────────────────────────
@@ -375,47 +550,68 @@ function renderPreview() {
   ));
 
   // Invoice cards
+  const CONF_LABEL = {
+    exact: '', high: ' (high match)', medium: ' (medium match)', low: ' (low match)',
+    remembered: ' (remembered)', manual: ' (manually picked)'
+  };
+
   state.invoices.forEach((inv, idx) => {
     const card = h('div', { className: 'invoice-card' });
-    
+
     // Header
-    const header = h('div', { className: 'invoice-header' },
+    card.appendChild(h('div', { className: 'invoice-header' },
       h('span', { className: 'invoice-name' }, inv.name),
       h('span', { className: 'invoice-total' }, '€' + inv.total.toFixed(2))
-    );
-    card.appendChild(header);
-    
-    // Match status
+    ));
+
+    // Match status + inline "Change" link for matched invoices
     if (inv.mollieCustomer) {
-      const conf = inv.matchConfidence === 'exact' ? '' : ' (' + inv.matchConfidence + ' match)';
-      card.appendChild(h('div', { className: 'invoice-match found' },
-        '✓ ' + inv.mollieCustomer.name + conf + (inv.mollieCustomer.email ? ' · ' + inv.mollieCustomer.email : '')
-      ));
+      const conf = CONF_LABEL[inv.matchConfidence] || '';
+      card.appendChild(h('div', {
+        className: 'invoice-match found',
+        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }
+      },
+        h('span', { style: { flex: '1', minWidth: '0' } },
+          '✓ ' + inv.mollieCustomer.name + conf + (inv.mollieCustomer.email ? ' · ' + inv.mollieCustomer.email : '')
+        ),
+        h('button', {
+          style: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: '11px', fontWeight: '600', textDecoration: 'underline', padding: '0', cursor: 'pointer' },
+          onclick: () => { inv._picking = !inv._picking; render(); }
+        }, inv._picking ? 'Hide picker' : 'Change')
+      );
     } else {
-      card.appendChild(h('div', { className: 'invoice-match missing' }, '✗ No matching Mollie customer found'));
+      card.appendChild(h('div', { className: 'invoice-match missing' },
+        '✗ No auto-match — pick a Mollie customer below'
+      ));
     }
-    
+
+    // Customer picker — shown when unmatched, or when user clicked "Change"
+    if (!inv.mollieCustomer || inv._picking) {
+      card.appendChild(renderCustomerPicker(inv));
+    }
+
     // Lines
     const linesText = inv.lines.map(l => l.student + ' · ' + l.type + ' · ' + l.duration + 'h × €' + l.pricePerHour).join('\n');
     card.appendChild(h('div', { className: 'invoice-lines' }, linesText));
-    
-    // Include toggle
+
+    // Include / Skip toggle — Include disabled when nothing is matched
     const toggle = h('div', { className: 'invoice-toggle' });
     const inclBtn = h('button', {
       className: 'toggle-btn' + (inv.include ? ' active' : ''),
-      onclick: () => { inv.include = true; render(); }
+      onclick: () => {
+        if (!inv.mollieCustomer) return;
+        inv.include = true; render();
+      }
     }, 'Include');
+    if (!inv.mollieCustomer) inclBtn.setAttribute('disabled', 'disabled');
     const skipBtn = h('button', {
       className: 'toggle-btn' + (!inv.include ? ' active' : ''),
       onclick: () => { inv.include = false; render(); }
     }, 'Skip');
     toggle.appendChild(inclBtn);
     toggle.appendChild(skipBtn);
-    if (!inv.mollieCustomer) {
-      toggle.appendChild(h('span', { style: { fontSize: '11px', color: 'var(--danger)' } }, ' Cannot generate without Mollie match'));
-    }
     card.appendChild(toggle);
-    
+
     wrap.appendChild(card);
   });
 
