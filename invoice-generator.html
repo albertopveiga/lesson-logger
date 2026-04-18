@@ -90,7 +90,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 11:28 UTC
+  v2026-04-18 11:45 UTC
 </div>
 
 <script>
@@ -208,13 +208,14 @@ function loadRecipient(parentName) {
   const book = getRecipientBook();
   const cached = book[normalize(parentName)];
   if (cached) {
-    // Ensure old entries without mollieCustomerId still work.
-    return Object.assign({ mollieCustomerId: '' }, cached);
+    // Strip any legacy mollieCustomerId field — we tested empirically
+    // (2026-04-18) that Mollie ignores it and still requires full address.
+    const { mollieCustomerId, ...rest } = cached;
+    return rest;
   }
   // First time we've seen this parent — seed from the name.
   const split = splitName(parentName);
   return {
-    mollieCustomerId: '',
     email: '',
     givenName: split.givenName,
     familyName: split.familyName,
@@ -239,9 +240,11 @@ function forgetRecipient(parentName) {
 }
 
 // Mollie rejects drafts when any of these fields are missing — learned the hard
-// way from "Field 'recipient.city' must be provided". Keep this list in sync
-// with whatever Mollie actually enforces.
-const ADDRESS_REQUIRED_FIELDS = [
+// way from "Field 'recipient.city' must be provided". We also tested passing
+// the AR customer UUID as recipientIdentifier (2026-04-18): Mollie ignores it
+// and still demands the full address. Bottom line: the full address is always
+// required by the Sales Invoices API, even for a known AR customer.
+const REQUIRED_RECIPIENT_FIELDS = [
   { key: 'email',           label: 'Email',         check: v => v && v.includes('@') },
   { key: 'streetAndNumber', label: 'Street + nr',   check: v => !!v },
   { key: 'postalCode',      label: 'Postcode',      check: v => !!v },
@@ -249,22 +252,9 @@ const ADDRESS_REQUIRED_FIELDS = [
   { key: 'country',         label: 'Country',       check: v => !!v },
 ];
 
-// If a Mollie AR customer ID is provided, we hope Mollie uses the stored
-// customer data on its side. Only email is strictly required as a fallback.
-// If Mollie rejects drafts sent this way, we fall back to full address entry
-// (the error will surface the missing fields verbatim).
-const ID_REQUIRED_FIELDS = [
-  { key: 'email',           label: 'Email',         check: v => v && v.includes('@') },
-];
-
-function requiredFieldsFor(r) {
-  const hasId = r && String(r.mollieCustomerId || '').trim();
-  return hasId ? ID_REQUIRED_FIELDS : ADDRESS_REQUIRED_FIELDS;
-}
-
 function missingRecipientFields(r) {
-  if (!r) return ADDRESS_REQUIRED_FIELDS.map(f => f.label);
-  return requiredFieldsFor(r)
+  if (!r) return REQUIRED_RECIPIENT_FIELDS.map(f => f.label);
+  return REQUIRED_RECIPIENT_FIELDS
     .filter(f => !f.check(String(r[f.key] || '').trim()))
     .map(f => f.label);
 }
@@ -273,8 +263,8 @@ function recipientIsReady(r) {
   return missingRecipientFields(r).length === 0;
 }
 
-function fieldIsRequired(r, key) {
-  return requiredFieldsFor(r).some(f => f.key === key);
+function fieldIsRequired(key) {
+  return REQUIRED_RECIPIENT_FIELDS.some(f => f.key === key);
 }
 
 // ─── Render ──────────────────────────────────────────────────────────────────
@@ -498,9 +488,9 @@ function renderInvoiceCard(inv) {
   const grid = h('div', { className: 'recipient-grid' });
 
   const fieldInput = (key, placeholder, opts = {}) => {
-    const reqList = requiredFieldsFor(inv.recipient);
-    const reqField = reqList.find(f => f.key === key);
-    const missing = reqField && !reqField.check(String(inv.recipient[key] || '').trim());
+    const required = fieldIsRequired(key);
+    const reqField = REQUIRED_RECIPIENT_FIELDS.find(f => f.key === key);
+    const missing = required && !reqField.check(String(inv.recipient[key] || '').trim());
     const input = h('input', {
       className: 'recipient-input' + (missing ? ' missing' : ''),
       type: opts.type || 'text',
@@ -513,29 +503,18 @@ function renderInvoiceCard(inv) {
     input.addEventListener('input', (e) => {
       inv.recipient[key] = e.target.value;
       saveRecipient(inv.name, inv.recipient);
-      // Re-render immediately when the ID field changes so required-ness
-      // flips in real time; other fields stay in-place (keyboard persists).
-      if (key === 'mollieCustomerId') {
-        // Blur first so the keyboard dismiss doesn't happen mid-render on iOS.
-        e.target.blur();
-        render();
-      }
     });
     input.addEventListener('blur', () => { render(); });
     return input;
   };
 
-  const hasId = !!String(inv.recipient.mollieCustomerId || '').trim();
-  const addrStar = hasId ? '' : ' *';
-
-  grid.appendChild(wrapField('Mollie AR customer ID (optional)', fieldInput('mollieCustomerId', 'paste UUID from dashboard URL', { autocapitalize: 'off' }), true));
   grid.appendChild(wrapField('Email *', fieldInput('email', 'parent@example.com', { type: 'email', inputmode: 'email', autocapitalize: 'off' }), true));
   grid.appendChild(wrapField('Given name', fieldInput('givenName', 'Given')));
   grid.appendChild(wrapField('Family name', fieldInput('familyName', 'Family')));
-  grid.appendChild(wrapField('Street + nr' + addrStar, fieldInput('streetAndNumber', 'Main St 12'), true));
-  grid.appendChild(wrapField('Postcode' + addrStar, fieldInput('postalCode', '1011 AB')));
-  grid.appendChild(wrapField('City' + addrStar, fieldInput('city', 'Amsterdam')));
-  grid.appendChild(wrapField('Country' + addrStar, fieldInput('country', 'NL', { autocapitalize: 'characters' })));
+  grid.appendChild(wrapField('Street + nr *', fieldInput('streetAndNumber', 'Main St 12'), true));
+  grid.appendChild(wrapField('Postcode *', fieldInput('postalCode', '1011 AB')));
+  grid.appendChild(wrapField('City *', fieldInput('city', 'Amsterdam')));
+  grid.appendChild(wrapField('Country *', fieldInput('country', 'NL', { autocapitalize: 'characters' })));
 
   details.appendChild(grid);
 
@@ -589,26 +568,17 @@ async function generateInvoices() {
   state.results = [];
   render();
 
-  const mollieInvoices = toGenerate.map(inv => {
-    // If the user pasted a Mollie AR customer UUID, use it as the
-    // recipientIdentifier so Mollie can match against its existing customer
-    // record. Otherwise fall back to a stable slug we generate from the name.
-    const pastedId = String(inv.recipient.mollieCustomerId || '').trim();
-    // Strip mollieCustomerId out of the recipient payload — it's not a Mollie
-    // field, just our own hint. Everything else goes through verbatim.
-    const { mollieCustomerId, ...recipientForMollie } = inv.recipient;
-    return {
-      recipientIdentifier: pastedId || slugify(inv.name),
-      customerName: inv.name,
-      recipient: Object.assign({ type: 'consumer', locale: 'nl_NL' }, recipientForMollie),
-      lines: inv.lines.map(l => ({
-        description: l.description,
-        quantity: 1,
-        unitPrice: l.total,
-      })),
-      memo: 'Generated from Lesson Logger',
-    };
-  });
+  const mollieInvoices = toGenerate.map(inv => ({
+    recipientIdentifier: slugify(inv.name),
+    customerName: inv.name,
+    recipient: Object.assign({ type: 'consumer', locale: 'nl_NL' }, inv.recipient),
+    lines: inv.lines.map(l => ({
+      description: l.description,
+      quantity: 1,
+      unitPrice: l.total,
+    })),
+    memo: 'Generated from Lesson Logger',
+  }));
 
   // Send in small batches to avoid Apps Script timeout.
   const BATCH = 5;
