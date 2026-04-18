@@ -264,7 +264,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; }
 
 <div id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 19:30 UTC
+  v2026-04-18 20:45 UTC
 </div>
 
 <script>
@@ -1342,7 +1342,7 @@ function renderSettings() {
       });
       if (bad) { showToast('⚠️ Enter a valid non-negative number for every type'); return; }
       showToast('Saving prices...');
-      const res = await api({ action: 'updateConfig', config: payload });
+      const res = await api('POST', { action: 'updateConfig', config: payload });
       if (res && !res.error) {
         // Update local state so Home/Log screens pick up the change without a reload.
         LESSON_TYPES.forEach(t => { state.config[t.id] = payload['price_' + t.id]; });
