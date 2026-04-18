@@ -89,6 +89,9 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
+<div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
+  v2026-04-18 11:10 UTC
+</div>
 
 <script>
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -231,11 +234,31 @@ function forgetRecipient(parentName) {
   saveRecipientBook(book);
 }
 
-// Minimum required data to send to Mollie. Email alone is the hard floor; the
-// others are recommended but Mollie may create a draft without them (she can
-// fill in missing fields in the Mollie UI before sending).
+// Mollie rejects drafts when any of these fields are missing — learned the hard
+// way from "Field 'recipient.city' must be provided". Keep this list in sync
+// with whatever Mollie actually enforces; surface a field-by-field list in the
+// UI so she knows what's missing without reading 422 errors.
+const REQUIRED_RECIPIENT_FIELDS = [
+  { key: 'email',           label: 'Email',         check: v => v && v.includes('@') },
+  { key: 'streetAndNumber', label: 'Street + nr',   check: v => !!v },
+  { key: 'postalCode',      label: 'Postcode',      check: v => !!v },
+  { key: 'city',            label: 'City',          check: v => !!v },
+  { key: 'country',         label: 'Country',       check: v => !!v },
+];
+
+function missingRecipientFields(r) {
+  if (!r) return REQUIRED_RECIPIENT_FIELDS.map(f => f.label);
+  return REQUIRED_RECIPIENT_FIELDS
+    .filter(f => !f.check(String(r[f.key] || '').trim()))
+    .map(f => f.label);
+}
+
 function recipientIsReady(r) {
-  return !!(r && r.email && r.email.includes('@'));
+  return missingRecipientFields(r).length === 0;
+}
+
+function fieldIsRequired(key) {
+  return REQUIRED_RECIPIENT_FIELDS.some(f => f.key === key);
 }
 
 // ─── Render ──────────────────────────────────────────────────────────────────
@@ -434,11 +457,12 @@ function renderInvoiceCard(inv) {
     h('span', { className: 'invoice-total' }, '€' + inv.total.toFixed(2))
   ));
 
+  const missing = missingRecipientFields(inv.recipient);
   card.appendChild(h('div', {
     className: 'recipient-status ' + (ready ? 'ready' : 'missing')
   }, ready
     ? '✓ ' + inv.recipient.email
-    : '✗ Email required before this invoice can be sent'
+    : '✗ Missing: ' + missing.join(', ')
   ));
 
   // Lesson line summary
