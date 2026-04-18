@@ -90,7 +90,7 @@ textarea.form-input { resize: vertical; line-height: 1.5; font-size: 13px; font-
 <div class="header"><h1>Invoice Generator</h1></div>
 <div class="content" id="app"></div>
 <div style="text-align:center; padding:16px 20px 24px; font-size:11px; color:var(--muted); letter-spacing:0.03em;">
-  v2026-04-18 11:51 UTC
+  v2026-04-18 12:03 UTC
 </div>
 
 <script>
@@ -664,9 +664,11 @@ function renderResults() {
   const failed = state.results.filter(r => !r.result?.success);
 
   if (succeeded.length > 0) {
-    wrap.appendChild(h('div', { className: 'success-box' },
-      '✓ ' + succeeded.length + ' draft invoice' + (succeeded.length !== 1 ? 's' : '') + ' created in Mollie. Review and send them from your Mollie Dashboard → Invoicing.'
-    ));
+    wrap.appendChild(h('div', { className: 'success-box', innerHTML:
+      '✓ <strong>' + succeeded.length + ' draft invoice' + (succeeded.length !== 1 ? 's' : '') + '</strong> created in Mollie.<br><br>' +
+      'Drafts don\'t have an invoice number yet — Mollie only assigns the number when you <strong>issue</strong> the draft in the dashboard. Issuing also emails the PDF to the parent.<br><br>' +
+      'Open <em>Invoicing → Sales invoices</em>, review each draft, and hit <strong>Send</strong>.'
+    }));
   }
 
   if (failed.length > 0) {
@@ -683,8 +685,13 @@ function renderResults() {
         h('span', { className: 'invoice-status ' + (ok ? 'created' : 'error') }, ok ? '✓ Draft created' : '✗ Failed')
       )
     );
-    if (ok && r.result.invoiceNumber) {
-      card.appendChild(h('div', { className: 'recipient-status ready' }, 'Invoice #' + r.result.invoiceNumber));
+    if (ok) {
+      // Mollie returns invoiceNumber only for issued invoices. For our drafts
+      // we show the internal id so she can find it in the dashboard if needed.
+      const label = r.result.invoiceNumber
+        ? 'Invoice #' + r.result.invoiceNumber
+        : 'Draft id: ' + (r.result.invoiceId || '(no id returned)') + ' · number assigned on issue';
+      card.appendChild(h('div', { className: 'recipient-status ready' }, label));
     }
     if (!ok) {
       card.appendChild(h('div', { className: 'recipient-status missing' }, r.result?.error || 'Unknown error'));
