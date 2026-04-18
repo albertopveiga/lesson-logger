@@ -1,6 +1,6 @@
 /**
  * Lesson Logger — Google Apps Script API
- * Version: v2026-04-18 18:30 UTC (standalone-safe: uses LESSON_LOGGER_SPREADSHEET_ID when set)
+ * Version: v2026-04-18 19:00 UTC (standalone-safe + respects Facturas "Active" column)
  *
  * Paste this into Extensions → Apps Script in your lesson-logger Google Sheet
  * (the one with Lessons / Students / Config tabs). Deploy as Web App
@@ -54,6 +54,7 @@ var FACTURAS_PARENTS_TAB_GID = 1134169331;
 var COL_STUDENT_NAME = "Student's Full Name";
 var COL_PARENT_NAME  = "Parent/Guardian's Full Name";
 var COL_PARENT_EMAIL = "Parent/Guardian's Email";
+var COL_ACTIVE       = "Active";  // optional; "NO" (case-insensitive) excludes the row
 
 // ─── One-time authorization helper ───────────────────────────────────────────
 //
@@ -300,6 +301,9 @@ function loadFacturasParentsStudents() {
   Object.keys(col).forEach(function(k) { if (col[k] === -1) missing.push(k); });
   if (missing.length) throw new Error('Facturas missing columns: ' + missing.join(', '));
 
+  // Active column is optional. -1 means "not present" → every row is active.
+  var activeIdx = headers.indexOf(normalizeHeader(COL_ACTIVE));
+
   var parentsById = {};
   var students = [];
 
@@ -310,6 +314,12 @@ function loadFacturasParentsStudents() {
     var parentEmail = String(row[col.email]   || '').trim().toLowerCase();
 
     if (!studentName && !parentName) continue; // skip blank rows
+
+    // Skip rows explicitly marked inactive. Blank / missing column = active.
+    if (activeIdx !== -1) {
+      var active = String(row[activeIdx] || '').trim().toUpperCase();
+      if (active === 'NO') continue;
+    }
 
     var parentId = deriveParentId(parentEmail, parentName);
     if (!parentsById[parentId]) {

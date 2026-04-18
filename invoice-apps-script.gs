@@ -1,6 +1,6 @@
 /**
  * Invoice Generator — Google Apps Script API
- * Version: v2026-04-18 16:50 UTC (default city = Den Haag when sheet row leaves it blank)
+ * Version: v2026-04-18 19:00 UTC (respects Facturas "Active" column; "NO" excludes row)
  *
  * Proxies Mollie API calls and reads the "Facturas" intake spreadsheet for
  * parent/student data. Paste into a NEW Google Apps Script project (or add
@@ -34,6 +34,7 @@ var COL_PARENT_EMAIL = "Parent/Guardian's Email";
 var COL_COUNTRY      = 'Country Of Residence';
 var COL_ADDRESS      = 'Address (including city/town)';
 var COL_POSTCODE     = 'Postcode';
+var COL_ACTIVE       = 'Active';  // optional; "NO" (case-insensitive) excludes the row
 
 // ─── One-time authorization helpers ──────────────────────────────────────────
 //
@@ -160,6 +161,9 @@ function lookupRecipients(parentNames) {
   Object.keys(col).forEach(function(k) { if (col[k] === -1) missing.push(k); });
   if (missing.length) return { error: 'Missing expected columns: ' + missing.join(', ') };
 
+  // Active column is optional. -1 means "not present" → every row is active.
+  var activeIdx = headers.indexOf(normalizeHeader(COL_ACTIVE));
+
   // Dedup: group by lowercased parent email, first row wins.
   var byEmail = {};
   var byName = {};
@@ -169,6 +173,11 @@ function lookupRecipients(parentNames) {
     var name  = String(row[col.name]  || '').trim();
     var email = String(row[col.email] || '').trim().toLowerCase();
     if (!name && !email) continue; // skip empty rows
+    // Skip rows explicitly marked inactive. Blank / missing column = active.
+    if (activeIdx !== -1) {
+      var active = String(row[activeIdx] || '').trim().toUpperCase();
+      if (active === 'NO') continue;
+    }
     totalRows++;
     var key = email || ('name:' + normalizeName(name));
     if (!byEmail[key]) {
